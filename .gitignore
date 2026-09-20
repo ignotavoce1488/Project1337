@@ -1,0 +1,44 @@
+# Secrets — NEVER commit these
+.env
+*.env
+.env.*
+!.env.example
+!deploy/windows/local.env
+vps_run.py
+.askpass.sh
+~/.vps_askpass.sh
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+SECRETS.md
+
+# Local credentials and legacy server helpers
+.local/
+vps_askpass.sh
+
+# Environments, runtime data and generated output
+.venv*/
+.pytest_cache/
+.ruff_cache/
+var/
+backups/
+node_modules/
+playwright-report/
+test-results/
+dist/
+*.log
+slovech-local-image.tar
