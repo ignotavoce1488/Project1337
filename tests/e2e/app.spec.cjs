@@ -29,12 +29,15 @@ test('authorization, translated lecture, history pagination, keyboard navigation
   await expect(page.locator('#lectureTitle')).toHaveText('Lecture 100');
   await page.locator('#openHistoryBtn').click();
   await expect(page.locator('.history-card')).toHaveCount(101);
+  await page.waitForTimeout(300);
+  await page.screenshot({path:'test-results/mini-app-history.png', fullPage:true});
   await page.locator('#historySearchInput').fill('Lecture 0');
   await expect(page.locator('.history-card')).toHaveCount(1);
   await page.locator('.history-card').focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('#lectureTitle')).toHaveText('Лекция 0');
   await expect(page).toHaveURL(/id=lecture0/);
+  await page.waitForTimeout(300);
   await page.screenshot({path:'test-results/mini-app-mobile.png', fullPage:true});
   expect(errors).toEqual([]);
 });
@@ -56,4 +59,6 @@ test('blocked localStorage does not prevent loading', async ({page}) => {
   await expect(page.locator('#lectureTitle')).toHaveText('Лекция 100');
   await page.locator('#themeToggleBtn').click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await page.waitForTimeout(300);
+  await page.screenshot({path:'test-results/mini-app-light.png', fullPage:true});
 });

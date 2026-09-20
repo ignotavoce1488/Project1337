@@ -5,6 +5,15 @@ let lectureRequestNumber = 0;
 let currentLecture = null;
 let currentTab = 'summary';
 
+function formatLectureDate(value) {
+  if (!value) return 'Сегодня';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: 'numeric', month: 'long', year: date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric'
+  }).format(date);
+}
+
 // Elements
 const emptyStateEl = document.getElementById('emptyState');
 const lectureViewEl = document.getElementById('lectureView');
@@ -159,7 +168,7 @@ async function loadLecture(id = null) {
     lectureViewEl.style.display = 'block';
 
     // Populate metadata
-    dateBadgeEl.textContent = data.created_at || 'Сегодня';
+    dateBadgeEl.textContent = formatLectureDate(data.created_at);
     statusPillEl.textContent = targetId ? 'Архивная запись' : 'Последний конспект';
 
     // Language Toggle Setup
@@ -240,7 +249,7 @@ function renderHistoryList(items) {
     return `
       <div role="button" tabindex="0" class="history-card ${isActive ? 'active' : ''}" data-id="${escapeHtml(item.id)}">
         <div class="history-card-top">
-          <span class="history-card-date">${escapeHtml(item.created_at || 'Запись')}</span>
+          <span class="history-card-date">${escapeHtml(formatLectureDate(item.created_at))}</span>
         </div>
         <div class="history-card-title">${escapeHtml(cleanTitle)}</div>
         <div class="history-card-preview">${escapeHtml(cleanPreview)}</div>
