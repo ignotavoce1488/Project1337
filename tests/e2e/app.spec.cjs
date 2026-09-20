@@ -62,3 +62,40 @@ test('blocked localStorage does not prevent loading', async ({page}) => {
   await page.waitForTimeout(300);
   await page.screenshot({path:'test-results/mini-app-light.png', fullPage:true});
 });
+
+test('transcript search treats special characters as text and resets on lecture change', async ({page}) => {
+  await prepare(page);
+  await page.route('**/api/lecture/latest', async route => {
+    const response = await route.fetch();
+    const lecture = await response.json();
+    lecture.transcription = 'A & B <test> 12:34 end';
+    await route.fulfill({response, json: lecture});
+  });
+  await page.goto('/app');
+  await page.locator('[data-tab="transcript"]').click();
+  await page.locator('#transcriptSearch').fill('amp');
+  await expect(page.locator('#transcriptBox .word-highlight')).toHaveCount(0);
+  await page.locator('#transcriptSearch').fill('&');
+  await expect(page.locator('#transcriptBox .word-highlight')).toHaveText('&');
+  await page.locator('#transcriptSearch').fill('<test>');
+  await expect(page.locator('#transcriptBox .word-highlight')).toHaveText('<test>');
+  await expect(page.locator('#transcriptBox')).not.toContainText('12:34');
+
+  await page.locator('#openHistoryBtn').click();
+  await page.locator('.history-card[data-id="lecture0"]').click();
+  await expect(page.locator('#lectureTitle')).toHaveText('Лекция 0');
+  await expect(page.locator('#transcriptSearch')).toHaveValue('');
+  await expect(page.locator('#clearSearchBtn')).toBeHidden();
+});
+
+test('history navigation retains Telegram auth fallback and app version', async ({page}) => {
+  await prepare(page, false);
+  await page.goto(`/app?v=3#tgWebAppData=${encodeURIComponent(signed())}`);
+  await expect(page.locator('#lectureTitle')).toHaveText('Лекция 100');
+  await page.locator('#openHistoryBtn').click();
+  await page.locator('.history-card[data-id="lecture0"]').click();
+  await expect(page.locator('#lectureTitle')).toHaveText('Лекция 0');
+  await expect(page).toHaveURL(/\?v=3&id=lecture0#tgWebAppData=/);
+  await page.reload();
+  await expect(page.locator('#lectureTitle')).toHaveText('Лекция 0');
+});

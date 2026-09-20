@@ -50,19 +50,24 @@ function renderTranscript(rawText, searchQuery = '') {
     .map(p => p.trim())
     .filter(p => p.length > 0);
 
+  const highlight = (text) => {
+    if (!searchQuery) return escapeHtml(text);
+    const pattern = new RegExp(searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    let cursor = 0;
+    let result = '';
+    for (const match of text.matchAll(pattern)) {
+      result += escapeHtml(text.slice(cursor, match.index));
+      result += `<span class="word-highlight">${escapeHtml(match[0])}</span>`;
+      cursor = match.index + match[0].length;
+    }
+    return result + escapeHtml(text.slice(cursor));
+  };
+
   let html = '';
   paragraphs.forEach((p, idx) => {
-    let displayText = escapeHtml(p);
-    if (searchQuery) {
-      const escapedQuery = escapeHtml(searchQuery);
-      const regex = new RegExp(`(${escapedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-      displayText = displayText.replace(regex, '<span class="word-highlight">$1</span>');
-    }
-
-    // Strip timecodes if they were generated
-    displayText = displayText.replace(/(?:^|\s)[\[\(]?(\d{1,2}:\d{2}(?::\d{2})?)[\]\)]?\s*[:\-—]?\s*/g, ' ');
-
-    html += displayText.trim();
+    // Clean source text before escaping; highlighting must never edit HTML or entities.
+    const displayText = p.replace(/(?:^|\s)[\[\(]?(\d{1,2}:\d{2}(?::\d{2})?)[\]\)]?\s*[:\-—]?\s*/g, ' ').trim();
+    html += highlight(displayText);
     if (idx < paragraphs.length - 1) {
       html += '<br><br>';
     }
@@ -183,6 +188,8 @@ async function loadLecture(id = null) {
     }
 
     renderLectureContent(data, currentAppLang);
+    if (transcriptSearch) transcriptSearch.value = '';
+    if (clearSearchBtn) clearSearchBtn.style.display = 'none';
     renderTranscript(data.transcription || '');
 
     // Setup Audio Player
@@ -266,7 +273,9 @@ function renderHistoryList(items) {
       const id = card.getAttribute('data-id');
       if (typeof triggerHaptic !== 'undefined') triggerHaptic('impact', 'light');
       closeHistory();
-      history.replaceState(null, '', `/app?id=${encodeURIComponent(id)}`);
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set('id', id);
+      history.replaceState(null, '', nextUrl);
       loadLecture(id);
     });
   });

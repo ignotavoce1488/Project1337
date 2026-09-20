@@ -1,6 +1,6 @@
 const { defineConfig } = require('@playwright/test');
 const { existsSync } = require('node:fs');
-const python = process.env.E2E_PYTHON || (existsSync('.venv312/bin/python') ? '.venv312/bin/python' : '.venv/bin/python');
+const python = process.env.E2E_PYTHON || ['.venv312/bin/python', '.venv/bin/python', '.venv-test/bin/python'].find(existsSync) || 'python3';
 module.exports = defineConfig({
   testDir: './tests/e2e',
   fullyParallel: false,
