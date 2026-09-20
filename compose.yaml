@@ -1,0 +1,92 @@
+x-app: &app
+  build: .
+  image: slovech:${APP_VERSION:-local}
+  restart: unless-stopped
+  init: true
+  env_file: .env
+  environment:
+    DATA_DIR: /data
+    AUDIO_DIR: /audio
+    STATIC_DIR: /app/web
+  volumes:
+    - data:/data
+    - audio:/audio
+  read_only: true
+  tmpfs:
+    - /tmp:size=128m,mode=1777
+  cap_drop: [ALL]
+  security_opt: ['no-new-privileges:true']
+  pids_limit: 128
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: '3'
+  networks: [app]
+
+services:
+  api:
+    <<: *app
+    command: [uvicorn, 'slovech.server:app', --host, 0.0.0.0, --port, '8000', --workers, '1', --proxy-headers, --forwarded-allow-ips, '172.30.80.2', --no-access-log]
+    mem_limit: 512m
+    cpus: 1
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+  bot:
+    <<: *app
+    command: [python, -m, slovech.bot]
+    mem_limit: 384m
+    cpus: 0.5
+    depends_on:
+      api:
+        condition: service_healthy
+  worker:
+    <<: *app
+    command: [python, -m, slovech.worker]
+    mem_limit: 1536m
+    cpus: 2
+    stop_grace_period: 30s
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import time,pathlib; assert time.time()-float(pathlib.Path('/data/worker.heartbeat').read_text())<60"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
+    ports: ['80:80', '443:443', '443:443/udp']
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+    networks:
+      app:
+        ipv4_address: 172.30.80.2
+    depends_on:
+      api:
+        condition: service_healthy
+volumes:
+  data:
+  audio:
+  caddy_data:
+  caddy_config:
+networks:
+  app:
+    ipam:
+      config:
+        - subnet: 172.30.80.0/24

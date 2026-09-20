@@ -1,0 +1,41 @@
+name: slovech-local
+
+services:
+  app:
+    image: slovech-local:2
+    build:
+      context: .
+      target: local-test
+    environment:
+      DATA_DIR: /data
+      AUDIO_DIR: /audio
+      STATIC_DIR: /app/web
+    ports:
+      - '127.0.0.1:8000:8000'
+    volumes:
+      - local_data:/data
+      - local_audio:/audio
+      - ./.env.local:/run/secrets/local.env:ro
+    init: true
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    pids_limit: 128
+    mem_limit: 2g
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+    healthcheck:
+      test: [CMD, python, -m, scripts.local_stack, --health]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+      start_period: 90s
+
+volumes:
+  local_data:
+  local_audio:

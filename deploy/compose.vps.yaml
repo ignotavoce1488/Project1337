@@ -1,0 +1,21 @@
+# Existing nginx terminates HTTPS. Run with -f compose.yaml -f deploy/compose.vps.yaml.
+services:
+  api:
+    ports: ['127.0.0.1:18000:8000']
+    command: [uvicorn, 'slovech.server:app', --host, 0.0.0.0, --port, '8000', --workers, '1', --proxy-headers, --forwarded-allow-ips, '172.30.80.1', --no-access-log]
+    mem_limit: 192m
+    cpus: 0.5
+  bot:
+    extra_hosts: ['host.docker.internal:host-gateway']
+    mem_limit: 160m
+    cpus: 0.3
+  worker:
+    # Match the existing local Telegram API file owner; retain app storage group.
+    user: '101:10001'
+    volumes:
+      - /var/lib/telegram-bot-api:/var/lib/telegram-bot-api:ro
+    extra_hosts: ['host.docker.internal:host-gateway']
+    mem_limit: 320m
+    cpus: 0.8
+  caddy:
+    profiles: [standalone-edge]

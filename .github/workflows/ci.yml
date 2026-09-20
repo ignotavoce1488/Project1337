@@ -1,0 +1,47 @@
+name: CI
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.12.15'
+          python-version: '3.12'
+      - run: uv sync --frozen
+      - run: uv run ruff check . && uv run ruff format --check .
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: uv run pytest -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - run: uv export --frozen --no-dev --no-hashes --output-file /tmp/requirements.txt
+      - run: uv run pip-audit -r /tmp/requirements.txt --disable-pip --no-deps
+      - run: docker build -t slovech:ci .
+      - name: Build the Windows local test image
+        run: |
+          docker build --target local-test -t slovech-local:2 .
+          docker run --rm --entrypoint cloudflared slovech-local:2 --version
+          docker run --rm --entrypoint python slovech-local:2 -c 'import scripts.local_stack'
+          cp deploy/windows/keys.example .env.local
+          docker compose --env-file deploy/windows/local.env -f compose.local.yaml config --quiet
+      - run: cp .env.example .env && docker compose config --quiet
+      - name: Container readiness smoke test
+        run: |
+          docker run -d --name slovech-test -e ENVIRONMENT=test -e DATA_DIR=/data -e AUDIO_DIR=/audio -p 127.0.0.1:8000:8000 slovech:ci
+          for attempt in $(seq 1 30); do
+            if curl --fail http://127.0.0.1:8000/ready; then exit 0; fi
+            sleep 1
+          done
+          docker logs slovech-test
+          exit 1
+      - name: Validate Caddy configuration
+        run: docker run --rm -e DOMAIN=https://notes.example.com -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.10.2-alpine caddy validate --config /etc/caddy/Caddyfile

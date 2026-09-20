@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Конспектъ | Конспект</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <!-- Pre-render theme sync (eliminates light mode flash) -->
+  <script src="/static/js/bootstrap.js"></script>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <!-- Soft Ambient Glows -->
+  <div class="ambient-glow glow-top"></div>
+  <div class="ambient-glow glow-bottom"></div>
+
+  <div class="app-container">
+    <!-- Top Action Bar -->
+    <header class="top-bar">
+      <div class="brand">
+        <span class="brand-icon">🌿</span>
+        <span class="brand-name">Конспектъ</span>
+      </div>
+
+      <div class="top-actions">
+        <!-- History Button -->
+        <button class="action-btn glass-btn" id="openHistoryBtn" title="История конспектов">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"></path>
+            <path d="M6 6h10"></path>
+            <path d="M6 10h10"></path>
+          </svg>
+          <span class="btn-text">История</span>
+          <span class="history-count-badge" id="historyBadge" style="display: none;">0</span>
+        </button>
+
+        <!-- Theme Mode Toggle (Light / Dark) -->
+        <button class="action-btn glass-btn icon-only" id="themeToggleBtn" title="Переключить тему (Светлая / Тёмная)">
+          <svg class="sun-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="moon-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+
+        <!-- Color Palette Button -->
+        <div class="palette-wrapper">
+          <button class="action-btn glass-btn icon-only" id="paletteBtn" title="Сменить акцентный цвет">
+            <span class="palette-current-dot"></span>
+          </button>
+
+          <div class="palette-dropdown" id="paletteDropdown">
+            <div class="palette-label">Цвет темы</div>
+            <div class="palette-colors">
+              <button class="color-dot active" data-color="lavender" title="Лаванда" style="--c: #c4b5fd;"></button>
+              <button class="color-dot" data-color="sage" title="Шалфей" style="--c: #a7f3d0;"></button>
+              <button class="color-dot" data-color="sky" title="Небо" style="--c: #bae6fd;"></button>
+              <button class="color-dot" data-color="peach" title="Персик" style="--c: #fed7aa;"></button>
+              <button class="color-dot" data-color="rose" title="Роза" style="--c: #fbcfe8;"></button>
+            </div>
+          </div>
+        </div>
+
+
+
+        <!-- Copy Button -->
+        <button class="action-btn glass-btn icon-only" id="copyBtn" title="Скопировать">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Empty State (Shown when no lectures exist) -->
+    <div class="empty-state glass-card" id="emptyState" style="display: none;">
+      <div class="empty-icon">🎙</div>
+      <h2>Здесь появятся ваши конспекты</h2>
+      <p>Отправьте любое аудио или голосовое сообщение боту <b>@slovech_bot</b>, и после обработки здесь появится структурированный конспект с аудиозаписью.</p>
+    </div>
+
+    <!-- Main Lecture Card -->
+    <div id="lectureView">
+      <div class="lecture-hero glass-card">
+        <div class="meta-row">
+          <span class="meta-pill date-pill" id="dateBadge">Загрузка...</span>
+          <span class="meta-pill status-pill" id="statusPill">Последний конспект</span>
+        </div>
+        <h1 class="lecture-heading" id="lectureTitle">Загрузка...</h1>
+      </div>
+
+      <!-- Language Toggle Control (Visible for EN audio) -->
+      <div id="langToggleWrapper" style="display: none; padding: 0 20px 12px; justify-content: flex-end;">
+        <button class="action-btn glass-btn" id="langToggleBtn" title="Переключить язык конспекта" style="padding: 6px 12px; height: auto; border-radius: var(--radius-md); font-size: 13px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+          </svg>
+          <span id="langToggleText" style="font-weight: 600;">Показать EN оригинал</span>
+        </button>
+      </div>
+
+      <!-- Key Takeaways Section -->
+      <section class="takeaways-section" id="takeawaysSection" style="display: none;">
+        <div class="section-heading">
+          <span class="heading-accent-bar"></span>
+          <span>Главные мысли</span>
+        </div>
+        <div class="takeaways-grid" id="takeawaysList"></div>
+      </section>
+
+      <!-- Soft Tab Selector -->
+      <div class="tab-control glass-tabs">
+        <button class="tab-item active" data-tab="summary">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+          </svg>
+          <span>Конспект</span>
+        </button>
+        <button class="tab-item" data-tab="transcript">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="23"></line>
+            <line x1="8" y1="23" x2="16" y2="23"></line>
+          </svg>
+          <span>Расшифровка</span>
+        </button>
+      </div>
+
+      <!-- Tab Contents -->
+      <main class="content-area">
+        <!-- Summary Pane -->
+        <article class="tab-content active" id="pane-summary">
+          <div class="paper-card glass-card markdown-render" id="summaryBox">
+            <div class="loading-state">
+              <div class="soft-spinner"></div>
+              <p>Загружаем конспект...</p>
+            </div>
+          </div>
+        </article>
+
+        <!-- Transcript Pane -->
+        <article class="tab-content" id="pane-transcript">
+          <div class="search-box glass-card">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" id="transcriptSearch" aria-label="Поиск в расшифровке" placeholder="Поиск в тексте расшифровки...">
+            <button class="clear-btn" id="clearSearchBtn" aria-label="Очистить поиск" style="display: none;">&times;</button>
+          </div>
+          <div class="paper-card glass-card transcript-render" id="transcriptBox">
+            <div class="loading-state">
+              <div class="soft-spinner"></div>
+              <p>Загружаем расшифровку...</p>
+            </div>
+          </div>
+        </article>
+      </main>
+    </div>
+
+  </div>
+
+  <!-- History Drawer / Bottom Sheet Modal -->
+  <div class="drawer-overlay" id="historyOverlay" role="dialog" aria-modal="true" aria-label="История конспектов">
+    <div class="drawer-container glass-card" style="max-height: 100vh; height: 100vh; border-radius: 0; padding-top: 20px;">
+      <div class="drawer-header">
+        <div class="drawer-drag-pill" style="display: none;"></div>
+        <div class="drawer-title-row">
+          <h3>Мои конспекты</h3>
+          <button class="drawer-close-btn" id="historyCloseBtn" aria-label="Закрыть историю">&times;</button>
+        </div>
+      </div>
+      <div class="drawer-search" style="padding: 0 4px 16px;">
+        <div class="search-box glass-card" style="margin: 0;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="text" id="historySearchInput" aria-label="Поиск конспектов" placeholder="Поиск по истории...">
+        </div>
+      </div>
+      <div class="drawer-list" id="historyList">
+        <div class="loading-state">
+          <div class="soft-spinner"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/ui.js"></script>
+  <script src="/static/js/theme.js"></script>
+  <script src="/static/js/app.js?v=1.1"></script>
+</body>
+</html>
