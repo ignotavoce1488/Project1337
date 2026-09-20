@@ -115,9 +115,9 @@ def test_static_health_and_security_headers(client):
         if path.startswith(("/app", "/static/")):
             assert response.headers["cache-control"] == "no-store"
 
-    html = client.get("/app?v=4").text
+    html = client.get("/app?v=5").text
     for asset in ("style.css", "bootstrap.js", "api.js", "ui.js", "theme.js", "app.js"):
-        assert f"{asset}?v=4" in html
+        assert f"{asset}?v=5" in html
 
 
 def test_rate_limit_ignores_spoofed_forwarding(client, headers):

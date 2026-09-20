@@ -54,7 +54,7 @@ async def notify(bot, job, lecture, settings):
         [
             InlineKeyboardButton(
                 text="Открыть конспект",
-                web_app=WebAppInfo(url=f"{settings.domain}/app?v=4&id={lecture.id}"),
+                web_app=WebAppInfo(url=f"{settings.domain}/app?v=5&id={lecture.id}"),
             )
         ],
         [InlineKeyboardButton(text="Скачать DOCX", callback_data=f"dl_ru_{lecture.id}")],
