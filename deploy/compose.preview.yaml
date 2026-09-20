@@ -1,0 +1,21 @@
+# Isolated API/Mini App preview for a feature branch on the production VPS.
+# Bot and worker are intentionally disabled: never poll one Telegram token twice.
+services:
+  api:
+    ports: ['127.0.0.1:${PREVIEW_PORT:-18001}:8000']
+    command: [uvicorn, 'slovech.server:app', --host, 0.0.0.0, --port, '8000', --workers, '1', --no-access-log]
+    restart: unless-stopped
+    mem_limit: 192m
+    cpus: 0.5
+  bot:
+    profiles: [full-preview]
+  worker:
+    profiles: [full-preview]
+  caddy:
+    profiles: [full-preview]
+
+networks:
+  app:
+    ipam:
+      config:
+        - subnet: ${PREVIEW_SUBNET:-172.30.81.0/24}
