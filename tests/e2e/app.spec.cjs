@@ -90,12 +90,34 @@ test('transcript search treats special characters as text and resets on lecture 
 
 test('history navigation retains Telegram auth fallback and app version', async ({page}) => {
   await prepare(page, false);
-  await page.goto(`/app?v=3#tgWebAppData=${encodeURIComponent(signed())}`);
+  await page.goto(`/app?v=4#tgWebAppData=${encodeURIComponent(signed())}`);
   await expect(page.locator('#lectureTitle')).toHaveText('Лекция 100');
   await page.locator('#openHistoryBtn').click();
   await page.locator('.history-card[data-id="lecture0"]').click();
   await expect(page.locator('#lectureTitle')).toHaveText('Лекция 0');
-  await expect(page).toHaveURL(/\?v=3&id=lecture0#tgWebAppData=/);
+  await expect(page).toHaveURL(/\?v=4&id=lecture0#tgWebAppData=/);
   await page.reload();
   await expect(page.locator('#lectureTitle')).toHaveText('Лекция 0');
+});
+
+test('long Russian title fits mobile card and logo letter is optically centered', async ({page}) => {
+  await prepare(page);
+  await page.route('**/api/lecture/latest', async route => {
+    const response = await route.fetch();
+    const lecture = await response.json();
+    lecture.title_ru = 'Разбор конфликта Александра Фреймтеймера с творческим объединением «Хозяева»';
+    await route.fulfill({response, json: lecture});
+  });
+  await page.goto('/app?v=4');
+  await expect(page.locator('#lectureTitle')).toContainText('Разбор конфликта');
+  const titleSize = await page.locator('#lectureTitle').evaluate(el => getComputedStyle(el).fontSize);
+  expect(titleSize).toBe('26px');
+  const letterTransform = await page.locator('.brand-letter').evaluate(el => getComputedStyle(el).transform);
+  expect(letterTransform).toBe('matrix(1, 0, 0, 1, 1, 2)');
+  const { titleRight, cardRight } = await page.evaluate(() => ({
+    titleRight: document.querySelector('#lectureTitle').getBoundingClientRect().right,
+    cardRight: document.querySelector('.lecture-hero').getBoundingClientRect().right
+  }));
+  expect(titleRight).toBeLessThan(cardRight);
+  await page.screenshot({path: 'test-results/mini-app-long-title.png', fullPage: true});
 });
