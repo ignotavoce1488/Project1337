@@ -24,7 +24,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
             }
         )
-        if request.url.path.startswith(("/api/", "/audio/")):
+        if request.url.path == "/app" or request.url.path.startswith(
+            ("/api/", "/audio/", "/static/")
+        ):
             response.headers["Cache-Control"] = "no-store"
         logger.info(
             "request id=%s method=%s status=%s duration_ms=%.1f",
