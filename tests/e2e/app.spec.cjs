@@ -90,12 +90,12 @@ test('transcript search treats special characters as text and resets on lecture 
 
 test('history navigation retains Telegram auth fallback and app version', async ({page}) => {
   await prepare(page, false);
-  await page.goto(`/app?v=6#tgWebAppData=${encodeURIComponent(signed())}`);
+  await page.goto(`/app?v=8#tgWebAppData=${encodeURIComponent(signed())}`);
   await expect(page.locator('#lectureTitle')).toHaveText('Лекция 100');
   await page.locator('#openHistoryBtn').click();
   await page.locator('.history-card[data-id="lecture0"]').click();
   await expect(page.locator('#lectureTitle')).toHaveText('Лекция 0');
-  await expect(page).toHaveURL(/\?v=6&id=lecture0#tgWebAppData=/);
+  await expect(page).toHaveURL(/\?v=8&id=lecture0#tgWebAppData=/);
   await page.reload();
   await expect(page.locator('#lectureTitle')).toHaveText('Лекция 0');
 });
@@ -108,7 +108,7 @@ test('long Russian title fits mobile card and logo letter is optically centered'
     lecture.title_ru = 'Разбор конфликта Александра Фреймтеймера с творческим объединением «Хозяева»';
     await route.fulfill({response, json: lecture});
   });
-  await page.goto('/app?v=6');
+  await page.goto('/app?v=8');
   await expect(page.locator('#lectureTitle')).toContainText('Разбор конфликта');
   const titleSize = await page.locator('#lectureTitle').evaluate(el => getComputedStyle(el).fontSize);
   expect(titleSize).toBe('26px');
@@ -124,7 +124,7 @@ test('long Russian title fits mobile card and logo letter is optically centered'
 
 test('history drawer contains backdrop gestures and restores the page after closing', async ({page}) => {
   await prepare(page);
-  await page.goto('/app?v=6');
+  await page.goto('/app?v=8');
   await page.evaluate(() => window.scrollTo(0, 300));
   const initialScroll = await page.evaluate(() => window.scrollY);
 
@@ -133,6 +133,19 @@ test('history drawer contains backdrop gestures and restores the page after clos
   await expect(page.locator('#historyOverlay')).toHaveAttribute('aria-hidden', 'false');
   await expect(page.locator('body')).toHaveCSS('position', 'fixed');
   await expect(page.locator('.app-container')).toHaveAttribute('inert', '');
+  await expect(page.locator('.history-card')).toHaveCount(101);
+  await expect(page.locator('.history-card-active-tag')).toHaveCount(1);
+  await expect(page.locator('.history-card-active-tag')).toHaveText('Открыт');
+
+  const firstCardTitle = page.locator('.history-card-title').first();
+  await expect(firstCardTitle).toHaveCSS('user-select', 'none');
+  const titleBox = await firstCardTitle.boundingBox();
+  await page.mouse.move(titleBox.x + 8, titleBox.y + 8);
+  await page.mouse.down();
+  await page.mouse.move(titleBox.x + 8, titleBox.y - 45, {steps: 4});
+  await page.mouse.up();
+  expect(await page.evaluate(() => window.getSelection().toString())).toBe('');
+  await expect(page).not.toHaveURL(/id=/);
 
   await page.mouse.move(10, 18);
   await page.mouse.down();

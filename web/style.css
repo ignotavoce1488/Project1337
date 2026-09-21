@@ -172,12 +172,13 @@ html.history-open, body.history-open { overflow: hidden; overscroll-behavior: no
 .drawer-search { flex: 0 0 auto; padding: 20px 0 4px; }
 .drawer-search .search-box { margin: 0; }
 .drawer-list { flex: 1 1 auto; overflow-y: auto; padding: 8px 1px 24px; scrollbar-width: thin; touch-action: pan-y; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; }
+.history-card, .history-card * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .history-card { position: relative; padding: 17px 42px 18px 17px; border-bottom: 1px solid var(--line); cursor: pointer; transition: background .18s ease; }
 .history-card:first-child { border-top: 1px solid var(--line); }
-.history-card:hover { background: var(--accent-soft); }
-.history-card.active::after { content: ''; position: absolute; top: 21px; right: 17px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent-main); }
-.history-card-top { margin-bottom: 6px; }
+@media (hover: hover) and (pointer: fine) { .history-card:hover { background: var(--accent-soft); } }
+.history-card-top { margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .history-card-date { color: var(--text-muted); font-size: 10px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
+.history-card-active-tag { padding: 3px 7px; border-radius: 99px; background: var(--accent-soft); color: var(--accent-main); font-size: 9px; font-weight: 800; letter-spacing: .06em; line-height: 1.2; text-transform: uppercase; }
 .history-card-title { color: var(--text); font-size: 15px; font-weight: 750; line-height: 1.35; }
 .history-card-preview { margin-top: 4px; overflow: hidden; color: var(--text-muted); font-size: 12px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
 

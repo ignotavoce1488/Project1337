@@ -37,6 +37,8 @@ const historyList = document.getElementById('historyList');
 const appContainer = document.querySelector('.app-container');
 let historyScrollY = 0;
 let backdropPointer = null;
+let cardPointer = null;
+let suppressCardClick = false;
 
 function renderTranscript(rawText, searchQuery = '') {
   if (!rawText || !rawText.trim()) {
@@ -260,6 +262,7 @@ function renderHistoryList(items) {
       <div role="button" tabindex="0" class="history-card ${isActive ? 'active' : ''}" data-id="${escapeHtml(item.id)}">
         <div class="history-card-top">
           <span class="history-card-date">${escapeHtml(formatLectureDate(item.created_at))}</span>
+          ${isActive ? '<span class="history-card-active-tag">Открыт</span>' : ''}
         </div>
         <div class="history-card-title">${escapeHtml(cleanTitle)}</div>
         <div class="history-card-preview">${escapeHtml(cleanPreview)}</div>
@@ -297,6 +300,31 @@ if (historySearchInput) {
     );
     renderHistoryList(filtered);
   });
+}
+
+if (historyList) {
+  historyList.addEventListener('pointerdown', (event) => {
+    if (!event.target.closest('.history-card')) return;
+    cardPointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
+    suppressCardClick = false;
+  });
+  historyList.addEventListener('pointermove', (event) => {
+    if (!cardPointer || cardPointer.id !== event.pointerId) return;
+    if (Math.hypot(event.clientX - cardPointer.x, event.clientY - cardPointer.y) >= 8) {
+      suppressCardClick = true;
+    }
+  });
+  historyList.addEventListener('pointercancel', () => {
+    cardPointer = null;
+    suppressCardClick = false;
+  });
+  historyList.addEventListener('click', (event) => {
+    if (!suppressCardClick || !event.target.closest('.history-card')) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    cardPointer = null;
+    suppressCardClick = false;
+  }, true);
 }
 
 async function openHistory() {
