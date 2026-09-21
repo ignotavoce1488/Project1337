@@ -34,6 +34,9 @@ const historyBadge = document.getElementById('historyBadge');
 const historyOverlay = document.getElementById('historyOverlay');
 const closeHistoryBtn = document.getElementById('historyCloseBtn');
 const historyList = document.getElementById('historyList');
+const appContainer = document.querySelector('.app-container');
+let historyScrollY = 0;
+let backdropPointer = null;
 
 function renderTranscript(rawText, searchQuery = '') {
   if (!rawText || !rawText.trim()) {
@@ -297,7 +300,16 @@ if (historySearchInput) {
 }
 
 async function openHistory() {
+  if (historyOverlay.classList.contains('show')) return;
   if (typeof triggerHaptic !== 'undefined') triggerHaptic('impact', 'medium');
+  historyScrollY = window.scrollY;
+  document.body.style.position = 'fixed';
+  document.body.style.top = `-${historyScrollY}px`;
+  document.body.style.width = '100%';
+  document.documentElement.classList.add('history-open');
+  document.body.classList.add('history-open');
+  if (appContainer) appContainer.inert = true;
+  historyOverlay.setAttribute('aria-hidden', 'false');
   historyOverlay.classList.add('show');
   if (closeHistoryBtn) closeHistoryBtn.focus();
 
@@ -320,16 +332,46 @@ async function openHistory() {
 }
 
 function closeHistory() {
+  if (!historyOverlay.classList.contains('show')) return;
   historyOverlay.classList.remove('show');
+  historyOverlay.setAttribute('aria-hidden', 'true');
+  if (appContainer) appContainer.inert = false;
+  document.documentElement.classList.remove('history-open');
+  document.body.classList.remove('history-open');
+  document.body.style.position = '';
+  document.body.style.top = '';
+  document.body.style.width = '';
+  window.scrollTo(0, historyScrollY);
+  backdropPointer = null;
   if (openHistoryBtn) openHistoryBtn.focus();
 }
 
 if (openHistoryBtn) openHistoryBtn.addEventListener('click', openHistory);
 if (closeHistoryBtn) closeHistoryBtn.addEventListener('click', closeHistory);
 if (historyOverlay) {
-  historyOverlay.addEventListener('click', (e) => {
-    if (e.target === historyOverlay) closeHistory();
+  historyOverlay.addEventListener('pointerdown', (event) => {
+    if (event.target !== historyOverlay) return;
+    backdropPointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
+    historyOverlay.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
   });
+  historyOverlay.addEventListener('pointermove', (event) => {
+    if (backdropPointer?.id === event.pointerId) event.preventDefault();
+  });
+  historyOverlay.addEventListener('pointerup', (event) => {
+    if (!backdropPointer || backdropPointer.id !== event.pointerId) return;
+    const distance = Math.hypot(
+      event.clientX - backdropPointer.x,
+      event.clientY - backdropPointer.y
+    );
+    backdropPointer = null;
+    event.preventDefault();
+    if (event.target === historyOverlay && distance < 10) closeHistory();
+  });
+  historyOverlay.addEventListener('pointercancel', () => { backdropPointer = null; });
+  historyOverlay.addEventListener('touchmove', (event) => {
+    if (event.target === historyOverlay) event.preventDefault();
+  }, { passive: false });
 }
 
 // === Tabs Navigation ===
