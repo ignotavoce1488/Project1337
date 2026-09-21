@@ -27,6 +27,7 @@ test('authorization, translated lecture, history pagination, keyboard navigation
   await expect(page.locator('#summaryBox')).toContainText('Русский текст');
   await expect(page.locator('.takeaway-marker')).toHaveText('01');
   await expect(page.locator('.takeaway-card svg')).toHaveCount(0);
+  await expect(page.locator('.takeaway-card')).toHaveCSS('align-items', 'center');
   await page.locator('#langToggleBtn').click();
   await expect(page.locator('#lectureTitle')).toHaveText('Lecture 100');
   await page.locator('#openHistoryBtn').click();
@@ -92,12 +93,12 @@ test('transcript search treats special characters as text and resets on lecture 
 
 test('history navigation retains Telegram auth fallback and app version', async ({page}) => {
   await prepare(page, false);
-  await page.goto(`/app?v=9#tgWebAppData=${encodeURIComponent(signed())}`);
+  await page.goto(`/app?v=10#tgWebAppData=${encodeURIComponent(signed())}`);
   await expect(page.locator('#lectureTitle')).toHaveText('Лекция 100');
   await page.locator('#openHistoryBtn').click();
   await page.locator('.history-card[data-id="lecture0"]').click();
   await expect(page.locator('#lectureTitle')).toHaveText('Лекция 0');
-  await expect(page).toHaveURL(/\?v=9&id=lecture0#tgWebAppData=/);
+  await expect(page).toHaveURL(/\?v=10&id=lecture0#tgWebAppData=/);
   await page.reload();
   await expect(page.locator('#lectureTitle')).toHaveText('Лекция 0');
 });
@@ -110,7 +111,7 @@ test('long Russian title fits mobile card and logo letter is optically centered'
     lecture.title_ru = 'Разбор конфликта Александра Фреймтеймера с творческим объединением «Хозяева»';
     await route.fulfill({response, json: lecture});
   });
-  await page.goto('/app?v=9');
+  await page.goto('/app?v=10');
   await expect(page.locator('#lectureTitle')).toContainText('Разбор конфликта');
   const titleSize = await page.locator('#lectureTitle').evaluate(el => getComputedStyle(el).fontSize);
   expect(titleSize).toBe('26px');
@@ -126,7 +127,7 @@ test('long Russian title fits mobile card and logo letter is optically centered'
 
 test('history drawer contains backdrop gestures and restores the page after closing', async ({page}) => {
   await prepare(page);
-  await page.goto('/app?v=9');
+  await page.goto('/app?v=10');
   await page.evaluate(() => window.scrollTo(0, 300));
   const initialScroll = await page.evaluate(() => window.scrollY);
 
