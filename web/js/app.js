@@ -122,13 +122,11 @@ function renderLectureContent(data, lang) {
   const keyPoints = isEn ? data.key_points : (data.key_points_ru || data.key_points);
   if (keyPoints && keyPoints.length > 0) {
     takeawaysSection.style.display = 'block';
-    takeawaysList.innerHTML = keyPoints.map(pt => {
+    takeawaysList.innerHTML = keyPoints.map((pt, index) => {
       const cleanPt = pt.replace(/^[\s*\-]+/g, '').replace(/[*_`#]/g, '');
       return `
       <div class="takeaway-card">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="20 6 9 17 4 12"></polyline>
-        </svg>
+        <span class="takeaway-marker" aria-hidden="true">${String(index + 1).padStart(2, '0')}</span>
         <span>${escapeHtml(cleanPt)}</span>
       </div>
     `;

@@ -38,7 +38,7 @@ async def handle_start(message: Message):
             [
                 InlineKeyboardButton(
                     text="Открыть конспекты",
-                    web_app=WebAppInfo(url=f"{get_settings().domain}/app?v=8"),
+                    web_app=WebAppInfo(url=f"{get_settings().domain}/app?v=9"),
                 )
             ]
         ]
