@@ -31,6 +31,8 @@ services:
       telegram-bot-api:
         condition: service_started
   worker:
+    # The VPS uses a local systemd-resolved stub backed by GeoHide Smart DNS.
+    dns: ['172.30.80.1']
     # Match the local Telegram API file owner; retain app storage group.
     user: '101:10001'
     environment:
