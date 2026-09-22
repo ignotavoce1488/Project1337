@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     max_audio_seconds: int = 10800
     max_pending_jobs: int = 100
     max_user_jobs: int = 3
-    job_timeout_seconds: int = 1800
+    job_timeout_seconds: int = 12000
 
     @model_validator(mode="after")
     def validate_settings(self):

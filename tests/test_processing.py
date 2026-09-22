@@ -5,6 +5,7 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
+from slovech.ai.live import transcribe_audio_live
 from slovech.ai.services import (
     KeyQuotaExceeded,
     ProviderError,
@@ -85,16 +86,20 @@ async def test_provider_retries_only_transient_failures(monkeypatch):
         with pytest.raises(ProviderError, match="401"):
             await request(client, "GET", "https://provider.test")
     quota_calls = []
+
     def quota_responder(req):
         quota_calls.append(req)
         return httpx.Response(429)
+
     async with httpx.AsyncClient(transport=httpx.MockTransport(quota_responder)) as client:
         with pytest.raises(KeyQuotaExceeded):
             await request(client, "GET", "https://provider.test")
     assert len(quota_calls) == 1
 
 
-async def test_transcription_switches_keys_and_stops_when_all_exhausted(tmp_path, monkeypatch, settings):
+async def test_transcription_switches_keys_and_stops_when_all_exhausted(
+    tmp_path, monkeypatch, settings
+):
     audio = tmp_path / "audio.mp3"
     audio.write_bytes(b"audio")
     settings.gemini_api_keys = SecretStr("first,second,third")
@@ -109,14 +114,21 @@ async def test_transcription_switches_keys_and_stops_when_all_exhausted(tmp_path
 
     class Response:
         def json(self):
-            return {"id": "interaction", "status": "completed", "steps": [
-                {"type": "model_output", "content": [{"type": "text", "text": "Привет"}]}
-            ]}
+            return {
+                "id": "interaction",
+                "status": "completed",
+                "steps": [
+                    {"type": "model_output", "content": [{"type": "text", "text": "Привет"}]}
+                ],
+            }
 
     monkeypatch.setattr("slovech.ai.services.upload_file_to_gemini", upload)
     monkeypatch.setattr("slovech.ai.services.request", AsyncMock(return_value=Response()))
     exhausted = set()
-    assert await transcribe_audio_with_gemini(str(audio), exhausted_keys=exhausted) == "[LANG:RU]\nПривет"
+    assert (
+        await transcribe_audio_with_gemini(str(audio), exhausted_keys=exhausted)
+        == "[LANG:RU]\nПривет"
+    )
     assert tried == ["first", "second", "third"]
     assert exhausted == {"first", "second"}
 
@@ -131,6 +143,24 @@ async def test_transcription_switches_keys_and_stops_when_all_exhausted(tmp_path
     with pytest.raises(QuotaExceeded):
         await transcribe_audio_with_gemini(str(audio), exhausted_keys=exhausted)
     assert tried.count("third") == 2
+
+
+async def test_live_transcription_rotates_keys_on_429(monkeypatch, settings):
+    settings.gemini_api_keys = SecretStr("first,second")
+    monkeypatch.setattr("slovech.ai.live.get_settings", lambda: settings)
+    attempted = []
+
+    async def live(path, key):
+        attempted.append(key)
+        if key == "first":
+            raise KeyQuotaExceeded("Live HTTP 429")
+        return "Привет, мир"
+
+    monkeypatch.setattr("slovech.ai.live._transcribe_session", live)
+    exhausted = set()
+    assert await transcribe_audio_live("audio.mp3", exhausted) == "[LANG:RU]\nПривет, мир"
+    assert attempted == ["first", "second"]
+    assert exhausted == {"first"}
 
 
 async def test_remote_failed_upload_deleted(monkeypatch, tmp_path):
@@ -187,7 +217,7 @@ async def test_long_audio_is_transcribed_in_chunks(tmp_path, monkeypatch):
 
     transcribe = AsyncMock(side_effect=["[LANG:RU]\nПервая", "[LANG:RU]\nВторая"])
     monkeypatch.setattr("slovech.worker.run_process", split)
-    monkeypatch.setattr("slovech.worker.transcribe_audio_with_gemini", transcribe)
+    monkeypatch.setattr("slovech.worker.transcribe_audio_live", transcribe)
     assert await transcribe_audio(audio, 4000) == "[LANG:RU]\nПервая\n\nВторая"
     assert transcribe.await_count == 2
     assert not list(tmp_path.glob("audio_part_*.mp3"))

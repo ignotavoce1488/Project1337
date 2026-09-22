@@ -12,10 +12,10 @@ from pathlib import Path
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
+from slovech.ai.live import transcribe_audio_live
 from slovech.ai.services import (
     QuotaExceeded,
     generate_summary_with_openrouter,
-    transcribe_audio_with_gemini,
 )
 from slovech.core.config import get_settings
 from slovech.core.logging import configure_logging
@@ -27,10 +27,9 @@ from slovech.core.telegram import create_bot
 from slovech.core.youtube import download_youtube_audio, fetch_youtube_transcript
 
 logger = logging.getLogger(__name__)
-# The endpoint accepts up to one hour, but dense speech can produce very large
-# responses before that duration. Ten-minute parts also stay below the
-# model's long-form output ceiling for recordings with very dense speech.
-TRANSCRIPTION_CHUNK_SECONDS = 10 * 60
+# Live transcription sessions have a ten-minute ceiling; leave room for setup
+# and finalization. Each segment is streamed at its real-time playback rate.
+TRANSCRIPTION_CHUNK_SECONDS = 8 * 60
 
 
 class BoundedDownload:
@@ -60,7 +59,7 @@ class BoundedDownload:
 async def transcribe_audio(final: Path, duration: float) -> str:
     exhausted_keys: set[str] = set()
     if duration <= TRANSCRIPTION_CHUNK_SECONDS:
-        return await transcribe_audio_with_gemini(str(final), exhausted_keys=exhausted_keys)
+        return await transcribe_audio_live(str(final), exhausted_keys=exhausted_keys)
 
     pattern = final.with_name(f"{final.stem}_part_%03d.mp3")
     await run_process(
@@ -90,7 +89,7 @@ async def transcribe_audio(final: Path, duration: float) -> str:
     transcripts = []
     try:
         for part in parts:
-            text = await transcribe_audio_with_gemini(str(part), exhausted_keys=exhausted_keys)
+            text = await transcribe_audio_live(str(part), exhausted_keys=exhausted_keys)
             if text.startswith("[LANG:EN]"):
                 language = "[LANG:EN]"
             transcripts.append(text.removeprefix("[LANG:EN]").removeprefix("[LANG:RU]").strip())
@@ -279,8 +278,8 @@ async def run_worker(stop: asyncio.Event):
                             message_id=job["payload"]["status_id"],
                             text=(
                                 f"Лимит Gemini исчерпан на всех ключах. Код: {job['id'][:8]}"
-                                if terminal else
-                                f"Не удалось обработать запись. Повторите отправку. Код: {job['id'][:8]}"
+                                if terminal
+                                else f"Не удалось обработать запись. Повторите отправку. Код: {job['id'][:8]}"
                             ),
                         )
                     except Exception:
