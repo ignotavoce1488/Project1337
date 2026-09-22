@@ -50,6 +50,17 @@ def test_retry_and_stale_attempt_cannot_finish(repo):
     assert repo.claim() is None
 
 
+def test_quota_error_is_terminal_on_first_attempt(repo):
+    repo.enqueue("quota-job", "quota-update", "123", {})
+    job = repo.claim()
+    repo.finish(job, "QuotaExceeded", terminal=True)
+    with repo.connection() as db:
+        assert tuple(db.execute("SELECT state,error FROM jobs WHERE id='quota-job'").fetchone()) == (
+            "failed", "QuotaExceeded"
+        )
+    assert repo.claim() is None
+
+
 def test_queue_limits(repo, settings):
     settings.max_user_jobs = 1
     settings.max_pending_jobs = 2

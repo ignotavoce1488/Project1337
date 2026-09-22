@@ -153,8 +153,8 @@ class Repository:
             )
         return {**dict(row), "payload": json.loads(row["payload"]), "attempts": row["attempts"] + 1}
 
-    def finish(self, job: dict, error: str | None = None):
-        state = "done" if error is None else ("failed" if job["attempts"] >= 3 else "pending")
+    def finish(self, job: dict, error: str | None = None, *, terminal: bool = False):
+        state = "done" if error is None else ("failed" if terminal or job["attempts"] >= 3 else "pending")
         with self.connection() as db:
             db.execute(
                 "UPDATE jobs SET state=?,error=?,available=?,lease_until=NULL WHERE id=? AND state='running' AND attempts=?",

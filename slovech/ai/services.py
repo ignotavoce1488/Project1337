@@ -19,6 +19,14 @@ class ProviderError(RuntimeError):
     pass
 
 
+class QuotaExceeded(ProviderError):
+    """Every configured Gemini key has returned a quota error."""
+
+
+class KeyQuotaExceeded(ProviderError):
+    """One Gemini key has returned HTTP 429."""
+
+
 async def request(client, method, url, **kwargs):
     for attempt in range(3):
         try:
@@ -29,7 +37,9 @@ async def request(client, method, url, **kwargs):
         else:
             if response.is_success:
                 return response
-            if response.status_code not in {429, 500, 502, 503, 504}:
+            if response.status_code == 429:
+                raise KeyQuotaExceeded("Provider HTTP 429")
+            if response.status_code not in {500, 502, 503, 504}:
                 raise ProviderError(f"Provider HTTP {response.status_code}")
             if attempt == 2:
                 raise ProviderError(f"Provider HTTP {response.status_code}")
@@ -141,6 +151,8 @@ async def upload_file_to_gemini(client, file_path, mime_type, api_key):
         timeout=180,
     )
     if not response.is_success:
+        if response.status_code == 429:
+            raise KeyQuotaExceeded("Upload HTTP 429")
         raise ProviderError(f"Upload HTTP {response.status_code}")
     remote = response.json()["file"]
     name = remote["name"]
@@ -210,13 +222,18 @@ def get_summary_prompt(lang: str) -> str:
     )
 
 
-async def transcribe_audio_with_gemini(file_path: str, mime_type: str = "audio/mpeg") -> str:
+async def transcribe_audio_with_gemini(
+    file_path: str, mime_type: str = "audio/mpeg", exhausted_keys: set[str] | None = None
+) -> str:
     settings = get_settings()
-    keys = [
+    keys = list(dict.fromkeys(
         key.strip() for key in settings.gemini_api_keys.get_secret_value().split(",") if key.strip()
-    ]
+    ))
+    exhausted = exhausted_keys if exhausted_keys is not None else set()
+    if keys and all(key in exhausted for key in keys):
+        raise QuotaExceeded("All Gemini transcription keys exceeded quota")
     async with httpx.AsyncClient(timeout=180, follow_redirects=False) as client:
-        for key in keys:
+        for key in (key for key in keys if key not in exhausted):
             name = None
             interaction_id = None
             try:
@@ -240,6 +257,9 @@ async def transcribe_audio_with_gemini(file_path: str, mime_type: str = "audio/m
                 interaction_id = interaction.get("id")
                 interaction = await wait_for_interaction(client, interaction, key)
                 return extract_transcription(interaction)
+            except KeyQuotaExceeded:
+                exhausted.add(key)
+                logger.warning("Gemini transcription quota exceeded key_index=%s", keys.index(key) + 1)
             except (ProviderError, httpx.HTTPError, ValueError, KeyError) as exc:
                 logger.warning(
                     "Audio upload or transcription failed type=%s reason=%s",
@@ -251,6 +271,8 @@ async def transcribe_audio_with_gemini(file_path: str, mime_type: str = "audio/m
                     await delete_interaction(client, interaction_id, key)
                 if name:
                     await delete_remote(client, name, key)
+    if keys and all(key in exhausted for key in keys):
+        raise QuotaExceeded("All Gemini transcription keys exceeded quota")
     raise ProviderError("Transcription providers unavailable")
 
 

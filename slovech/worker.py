@@ -12,7 +12,11 @@ from pathlib import Path
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
-from slovech.ai.services import generate_summary_with_openrouter, transcribe_audio_with_gemini
+from slovech.ai.services import (
+    QuotaExceeded,
+    generate_summary_with_openrouter,
+    transcribe_audio_with_gemini,
+)
 from slovech.core.config import get_settings
 from slovech.core.logging import configure_logging
 from slovech.core.models import Lecture
@@ -54,8 +58,9 @@ class BoundedDownload:
 
 
 async def transcribe_audio(final: Path, duration: float) -> str:
+    exhausted_keys: set[str] = set()
     if duration <= TRANSCRIPTION_CHUNK_SECONDS:
-        return await transcribe_audio_with_gemini(str(final))
+        return await transcribe_audio_with_gemini(str(final), exhausted_keys=exhausted_keys)
 
     pattern = final.with_name(f"{final.stem}_part_%03d.mp3")
     await run_process(
@@ -85,7 +90,7 @@ async def transcribe_audio(final: Path, duration: float) -> str:
     transcripts = []
     try:
         for part in parts:
-            text = await transcribe_audio_with_gemini(str(part))
+            text = await transcribe_audio_with_gemini(str(part), exhausted_keys=exhausted_keys)
             if text.startswith("[LANG:EN]"):
                 language = "[LANG:EN]"
             transcripts.append(text.removeprefix("[LANG:EN]").removeprefix("[LANG:RU]").strip())
@@ -265,13 +270,18 @@ async def run_worker(stop: asyncio.Event):
                 # Never store provider response bodies, tokens or transcript contents in logs.
                 error = type(exc).__name__
                 logger.error("Job failed id=%s type=%s", job["id"], error)
-                await asyncio.to_thread(repository.finish, job, error)
-                if job["attempts"] >= 3:
+                terminal = isinstance(exc, QuotaExceeded)
+                await asyncio.to_thread(repository.finish, job, error, terminal=terminal)
+                if terminal or job["attempts"] >= 3:
                     try:
                         await bot.edit_message_text(
                             chat_id=job["payload"]["chat_id"],
                             message_id=job["payload"]["status_id"],
-                            text=f"Не удалось обработать запись. Повторите отправку. Код: {job['id'][:8]}",
+                            text=(
+                                f"Лимит Gemini исчерпан на всех ключах. Код: {job['id'][:8]}"
+                                if terminal else
+                                f"Не удалось обработать запись. Повторите отправку. Код: {job['id'][:8]}"
+                            ),
                         )
                     except Exception:
                         logger.warning("Failure notification unavailable id=%s", job["id"])
