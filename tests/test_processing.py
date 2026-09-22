@@ -7,6 +7,7 @@ import pytest
 from slovech.ai.services import (
     ProviderError,
     extract_text,
+    extract_transcription,
     parse_summary,
     request,
     upload_file_to_gemini,
@@ -51,6 +52,16 @@ def test_summary_and_incomplete_response_rejected():
     assert parse_summary('```json\n{"title":"T","summary":"S"}\n```')["title"] == "T"
     with pytest.raises(ProviderError):
         extract_text({"candidates": [{"finishReason": "MAX_TOKENS"}]})
+
+
+def test_dedicated_transcription_response_and_language_detection():
+    response = {
+        "status": "completed",
+        "steps": [{"type": "model_output", "content": [{"type": "text", "text": "Привет, мир"}]}],
+    }
+    assert extract_transcription(response) == "[LANG:RU]\nПривет, мир"
+    with pytest.raises(ProviderError):
+        extract_transcription({"status": "incomplete", "steps": []})
 
 
 async def test_provider_retries_only_transient_failures(monkeypatch):
@@ -126,7 +137,7 @@ async def test_long_audio_is_transcribed_in_chunks(tmp_path, monkeypatch):
     transcribe = AsyncMock(side_effect=["[LANG:RU]\nПервая", "[LANG:RU]\nВторая"])
     monkeypatch.setattr("slovech.worker.run_process", split)
     monkeypatch.setattr("slovech.worker.transcribe_audio_with_gemini", transcribe)
-    assert await transcribe_audio(audio, 1800) == "[LANG:RU]\nПервая\n\nВторая"
+    assert await transcribe_audio(audio, 4000) == "[LANG:RU]\nПервая\n\nВторая"
     assert transcribe.await_count == 2
     assert not list(tmp_path.glob("audio_part_*.mp3"))
 

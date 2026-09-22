@@ -118,12 +118,22 @@ async def upload_file_to_gemini(client, file_path, mime_type, api_key):
         raise
 
 
-TRANSCRIPTION_PROMPT = (
-    "Сделай максимально точную, дословную и полную текстовую расшифровку этой аудиозаписи. "
-    "В самом начале текста первой строкой обязательно напиши метку языка аудио: [LANG:EN] если язык английский, или [LANG:RU] если язык русский. "
-    "Далее с новой строки пиши саму расшифровку на оригинальном языке. "
-    "СТРОГО ЗАПРЕЩЕНО добавлять таймкоды (например, [00:00]). Выводи только сплошной текст, разбитый на удобные абзацы."
-)
+def extract_transcription(data: dict) -> str:
+    interaction = data.get("interaction", data)
+    if interaction.get("status") != "completed":
+        raise ProviderError("Transcription interaction did not complete")
+    text = "\n".join(
+        content.get("text", "")
+        for step in interaction.get("steps", [])
+        if step.get("type") == "model_output"
+        for content in step.get("content", [])
+        if content.get("type") == "text"
+    ).strip()
+    if not text:
+        raise ProviderError("Transcription interaction returned empty text")
+    cyrillic = sum("а" <= char.lower() <= "я" or char.lower() == "ё" for char in text)
+    latin = sum("a" <= char.lower() <= "z" for char in text)
+    return f"[LANG:{'RU' if cyrillic >= latin else 'EN'}]\n{text}"
 
 
 def get_summary_prompt(lang: str) -> str:
@@ -164,32 +174,21 @@ async def transcribe_audio_with_gemini(file_path: str, mime_type: str = "audio/m
             name = None
             try:
                 uri, name = await upload_file_to_gemini(client, file_path, mime_type, key)
-                for model in settings.gemini_models.split(","):
-                    try:
-                        response = await request(
-                            client,
-                            "POST",
-                            f"{BASE}/v1beta/models/{model.strip()}:generateContent",
-                            headers={"x-goog-api-key": key},
-                            json={
-                                "contents": [
-                                    {
-                                        "parts": [
-                                            {
-                                                "file_data": {
-                                                    "mime_type": mime_type,
-                                                    "file_uri": uri,
-                                                }
-                                            },
-                                            {"text": TRANSCRIPTION_PROMPT},
-                                        ]
-                                    }
-                                ]
-                            },
-                        )
-                        return extract_text(response.json())
-                    except (ProviderError, ValueError, KeyError):
-                        logger.warning("Transcription attempt failed")
+                response = await request(
+                    client,
+                    "POST",
+                    f"{BASE}/v1beta/interactions",
+                    headers={"x-goog-api-key": key},
+                    json={
+                        "model": "gemini-3.5-transcribe",
+                        "input": [{"type": "audio", "uri": uri, "mime_type": mime_type}],
+                        "generation_config": {
+                            "transcription_config": {"mode": {"type": "verbatim"}}
+                        },
+                        "store": False,
+                    },
+                )
+                return extract_transcription(response.json())
             except (ProviderError, httpx.HTTPError, ValueError, KeyError):
                 logger.warning("Audio upload or transcription failed")
             finally:
