@@ -215,3 +215,33 @@ async def test_local_telegram_path_cannot_escape_shared_root(repo, monkeypatch, 
             repo,
         )
     bot.download_file.assert_not_called()
+
+
+async def test_local_telegram_source_is_removed_after_final_failure(repo, monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    root = tmp_path / "telegram"
+    root.mkdir()
+    source = root / "large-audio.mp3"
+    source.write_bytes(b"audio")
+    repo.settings.telegram_local_file_root = root
+    bot = AsyncMock()
+    bot.get_file.return_value = SimpleNamespace(file_path=str(source), file_size=5)
+
+    async def download(_, destination, **kwargs):
+        destination.write(b"audio")
+
+    bot.download_file.side_effect = download
+    monkeypatch.setattr("slovech.worker.run_process", AsyncMock(side_effect=RuntimeError("bad")))
+    with pytest.raises(RuntimeError):
+        await process_job(
+            {
+                "id": "job",
+                "user_id": "123",
+                "attempts": 3,
+                "payload": {"kind": "audio", "file_id": "test"},
+            },
+            bot,
+            repo,
+        )
+    assert not source.exists()

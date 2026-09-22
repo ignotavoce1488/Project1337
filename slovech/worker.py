@@ -92,6 +92,7 @@ async def process_job(job: dict, bot, repository: Repository):
     raw = settings.audio_dir / f"raw_{stem}"
     final = settings.audio_dir / f"{stem}.mp3"
     saved = False
+    telegram_source = None
     try:
         transcription = None
         if payload["kind"] == "youtube":
@@ -111,6 +112,7 @@ async def process_job(job: dict, bot, repository: Repository):
                     or source.is_symlink()
                 ):
                     raise ValueError("Telegram file is outside the shared root")
+                telegram_source = source
             stream = BoundedDownload(raw, settings.max_upload_bytes)
             try:
                 await bot.download_file(info.file_path, stream, timeout=300)
@@ -181,6 +183,8 @@ async def process_job(job: dict, bot, repository: Repository):
             path.unlink(missing_ok=True)
         if not saved:
             final.unlink(missing_ok=True)
+        if telegram_source is not None and (saved or job.get("attempts", 0) >= 3):
+            telegram_source.unlink(missing_ok=True)
 
 
 async def run_worker(stop: asyncio.Event):
