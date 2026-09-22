@@ -13,7 +13,7 @@ from slovech.ai.services import (
 )
 from slovech.core.process import run_process
 from slovech.core.youtube import youtube_video_id
-from slovech.worker import BoundedDownload, process_job
+from slovech.worker import BoundedDownload, process_job, transcribe_audio
 
 
 @pytest.mark.parametrize(
@@ -113,6 +113,22 @@ def test_download_actual_size_limit(tmp_path):
     finally:
         stream.close()
     assert (tmp_path / "audio").stat().st_size == 4
+
+
+async def test_long_audio_is_transcribed_in_chunks(tmp_path, monkeypatch):
+    audio = tmp_path / "audio.mp3"
+    audio.write_bytes(b"audio")
+
+    async def split(*args, **kwargs):
+        (tmp_path / "audio_part_000.mp3").write_bytes(b"one")
+        (tmp_path / "audio_part_001.mp3").write_bytes(b"two")
+
+    transcribe = AsyncMock(side_effect=["[LANG:RU]\nПервая", "[LANG:RU]\nВторая"])
+    monkeypatch.setattr("slovech.worker.run_process", split)
+    monkeypatch.setattr("slovech.worker.transcribe_audio_with_gemini", transcribe)
+    assert await transcribe_audio(audio, 1800) == "[LANG:RU]\nПервая\n\nВторая"
+    assert transcribe.await_count == 2
+    assert not list(tmp_path.glob("audio_part_*.mp3"))
 
 
 async def test_worker_saved_record_retries_notification_without_ai(repo, lecture, monkeypatch):

@@ -23,6 +23,7 @@ from slovech.core.telegram import create_bot
 from slovech.core.youtube import download_youtube_audio, fetch_youtube_transcript
 
 logger = logging.getLogger(__name__)
+TRANSCRIPTION_CHUNK_SECONDS = 15 * 60
 
 
 class BoundedDownload:
@@ -47,6 +48,45 @@ class BoundedDownload:
 
     def close(self):
         self.file.close()
+
+
+async def transcribe_audio(final: Path, duration: float) -> str:
+    if duration <= TRANSCRIPTION_CHUNK_SECONDS:
+        return await transcribe_audio_with_gemini(str(final))
+
+    pattern = final.with_name(f"{final.stem}_part_%03d.mp3")
+    await run_process(
+        "ffmpeg",
+        "-nostdin",
+        "-y",
+        "-v",
+        "error",
+        "-i",
+        str(final),
+        "-f",
+        "segment",
+        "-segment_time",
+        str(TRANSCRIPTION_CHUNK_SECONDS),
+        "-c",
+        "copy",
+        str(pattern),
+        timeout=120,
+    )
+    parts = sorted(final.parent.glob(f"{final.stem}_part_*.mp3"))
+    if not parts:
+        raise ValueError("Audio chunking produced no files")
+    language = "[LANG:RU]"
+    transcripts = []
+    try:
+        for part in parts:
+            text = await transcribe_audio_with_gemini(str(part))
+            if text.startswith("[LANG:EN]"):
+                language = "[LANG:EN]"
+            transcripts.append(text.removeprefix("[LANG:EN]").removeprefix("[LANG:RU]").strip())
+    finally:
+        for part in parts:
+            part.unlink(missing_ok=True)
+    return f"{language}\n" + "\n\n".join(transcripts)
 
 
 async def notify(bot, job, lecture, settings):
@@ -162,7 +202,7 @@ async def process_job(job: dict, bot, repository: Repository):
             )
             if not final.is_file() or final.stat().st_size >= settings.max_upload_bytes:
                 raise ValueError("Converted audio exceeds size limit")
-            transcription = await transcribe_audio_with_gemini(str(final))
+            transcription = await transcribe_audio(final, duration)
         language = "en" if transcription.startswith("[LANG:EN]") else "ru"
         transcription = transcription.removeprefix("[LANG:EN]").removeprefix("[LANG:RU]").strip()
         summary = await generate_summary_with_openrouter(transcription, language)
