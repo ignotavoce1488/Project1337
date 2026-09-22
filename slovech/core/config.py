@@ -30,7 +30,6 @@ class Settings(BaseSettings):
     telegram_local_file_root: Path | None = None
     storage_group_writable: bool = False
     gemini_api_keys: SecretStr = SecretStr("")
-    gemini_models: str = "gemini-2.5-flash"
     openrouter_api_key: SecretStr = SecretStr("")
     openrouter_models: str = ""
     youtube_proxy: str = ""
@@ -89,6 +88,8 @@ class Settings(BaseSettings):
     def validate_worker(self):
         if not self.bot_token.get_secret_value() or not self.gemini_api_keys.get_secret_value():
             raise ValueError("Bot/worker requires BOT_TOKEN and GEMINI_API_KEYS")
+        if not self.openrouter_api_key.get_secret_value() or not self.openrouter_models.strip():
+            raise ValueError("Worker requires OPENROUTER_API_KEY and OPENROUTER_MODELS")
 
 
 @lru_cache

@@ -36,7 +36,6 @@ def child_environment(settings: Settings, domain: str) -> dict[str, str]:
         "DOMAIN": domain,
         "BOT_TOKEN": settings.bot_token.get_secret_value(),
         "GEMINI_API_KEYS": settings.gemini_api_keys.get_secret_value(),
-        "GEMINI_MODELS": settings.gemini_models,
         "OPENROUTER_API_KEY": settings.openrouter_api_key.get_secret_value(),
         "OPENROUTER_MODELS": settings.openrouter_models,
         "DATA_DIR": str(settings.data_dir),

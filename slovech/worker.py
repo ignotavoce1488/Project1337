@@ -15,7 +15,9 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from slovech.ai.live import transcribe_audio_live
 from slovech.ai.services import (
     QuotaExceeded,
+    SummaryUnavailable,
     generate_summary_with_openrouter,
+    transcribe_audio_with_gemini,
 )
 from slovech.core.config import get_settings
 from slovech.core.logging import configure_logging
@@ -30,6 +32,8 @@ logger = logging.getLogger(__name__)
 # Live transcription sessions have a ten-minute ceiling; leave room for setup
 # and finalization. Each segment is streamed at its real-time playback rate.
 TRANSCRIPTION_CHUNK_SECONDS = 8 * 60
+FILE_TRANSCRIPTION_CHUNK_SECONDS = 30 * 60
+SMALL_AUDIO_MAX_BYTES = 10 * 1024 * 1024
 
 
 class BoundedDownload:
@@ -56,10 +60,13 @@ class BoundedDownload:
         self.file.close()
 
 
-async def transcribe_audio(final: Path, duration: float) -> str:
+async def transcribe_audio(final: Path, duration: float, original_size: int) -> str:
+    small = original_size <= SMALL_AUDIO_MAX_BYTES
+    chunk_seconds = TRANSCRIPTION_CHUNK_SECONDS if small else FILE_TRANSCRIPTION_CHUNK_SECONDS
+    transcriber = transcribe_audio_live if small else transcribe_audio_with_gemini
     exhausted_keys: set[str] = set()
-    if duration <= TRANSCRIPTION_CHUNK_SECONDS:
-        return await transcribe_audio_live(str(final), exhausted_keys=exhausted_keys)
+    if duration <= chunk_seconds:
+        return await transcriber(str(final), exhausted_keys=exhausted_keys)
 
     pattern = final.with_name(f"{final.stem}_part_%03d.mp3")
     await run_process(
@@ -73,7 +80,7 @@ async def transcribe_audio(final: Path, duration: float) -> str:
         "-f",
         "segment",
         "-segment_time",
-        str(TRANSCRIPTION_CHUNK_SECONDS),
+        str(chunk_seconds),
         "-vn",
         "-c:a",
         "libmp3lame",
@@ -89,7 +96,7 @@ async def transcribe_audio(final: Path, duration: float) -> str:
     transcripts = []
     try:
         for part in parts:
-            text = await transcribe_audio_live(str(part), exhausted_keys=exhausted_keys)
+            text = await transcriber(str(part), exhausted_keys=exhausted_keys)
             if text.startswith("[LANG:EN]"):
                 language = "[LANG:EN]"
             transcripts.append(text.removeprefix("[LANG:EN]").removeprefix("[LANG:RU]").strip())
@@ -212,7 +219,7 @@ async def process_job(job: dict, bot, repository: Repository):
             )
             if not final.is_file() or final.stat().st_size >= settings.max_upload_bytes:
                 raise ValueError("Converted audio exceeds size limit")
-            transcription = await transcribe_audio(final, duration)
+            transcription = await transcribe_audio(final, duration, raw.stat().st_size)
         language = "en" if transcription.startswith("[LANG:EN]") else "ru"
         transcription = transcription.removeprefix("[LANG:EN]").removeprefix("[LANG:RU]").strip()
         summary = await generate_summary_with_openrouter(transcription, language)
@@ -269,7 +276,7 @@ async def run_worker(stop: asyncio.Event):
                 # Never store provider response bodies, tokens or transcript contents in logs.
                 error = type(exc).__name__
                 logger.error("Job failed id=%s type=%s", job["id"], error)
-                terminal = isinstance(exc, QuotaExceeded)
+                terminal = isinstance(exc, (QuotaExceeded, SummaryUnavailable))
                 await asyncio.to_thread(repository.finish, job, error, terminal=terminal)
                 if terminal or job["attempts"] >= 3:
                     try:
@@ -277,8 +284,10 @@ async def run_worker(stop: asyncio.Event):
                             chat_id=job["payload"]["chat_id"],
                             message_id=job["payload"]["status_id"],
                             text=(
-                                f"Лимит Gemini исчерпан на всех ключах. Код: {job['id'][:8]}"
-                                if terminal
+                                f"Лимит Gemini исчерпан. Код: {job['id'][:8]}"
+                                if isinstance(exc, QuotaExceeded)
+                                else f"Не удалось создать конспект через OpenRouter. Код: {job['id'][:8]}"
+                                if isinstance(exc, SummaryUnavailable)
                                 else f"Не удалось обработать запись. Повторите отправку. Код: {job['id'][:8]}"
                             ),
                         )

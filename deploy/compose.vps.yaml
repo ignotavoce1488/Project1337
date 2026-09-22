@@ -38,6 +38,7 @@ services:
     environment:
       TELEGRAM_API_URL: http://telegram-bot-api:8081
       TELEGRAM_LOCAL_FILE_ROOT: /var/lib/telegram-bot-api
+      OPENROUTER_MODELS: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free,liquid/lfm-2.5-2.6b:free
     volumes:
       - telegram_bot_api:/var/lib/telegram-bot-api
     mem_limit: 320m

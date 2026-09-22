@@ -10,8 +10,10 @@ from slovech.ai.services import (
     KeyQuotaExceeded,
     ProviderError,
     QuotaExceeded,
+    SummaryUnavailable,
     extract_text,
     extract_transcription,
+    generate_summary_with_openrouter,
     parse_summary,
     request,
     transcribe_audio_with_gemini,
@@ -19,7 +21,12 @@ from slovech.ai.services import (
 )
 from slovech.core.process import run_process
 from slovech.core.youtube import youtube_video_id
-from slovech.worker import BoundedDownload, process_job, transcribe_audio
+from slovech.worker import (
+    SMALL_AUDIO_MAX_BYTES,
+    BoundedDownload,
+    process_job,
+    transcribe_audio,
+)
 
 
 @pytest.mark.parametrize(
@@ -218,9 +225,91 @@ async def test_long_audio_is_transcribed_in_chunks(tmp_path, monkeypatch):
     transcribe = AsyncMock(side_effect=["[LANG:RU]\nПервая", "[LANG:RU]\nВторая"])
     monkeypatch.setattr("slovech.worker.run_process", split)
     monkeypatch.setattr("slovech.worker.transcribe_audio_live", transcribe)
-    assert await transcribe_audio(audio, 4000) == "[LANG:RU]\nПервая\n\nВторая"
+    assert await transcribe_audio(audio, 4000, 1) == "[LANG:RU]\nПервая\n\nВторая"
     assert transcribe.await_count == 2
     assert not list(tmp_path.glob("audio_part_*.mp3"))
+
+
+async def test_transcription_routes_at_original_ten_mib_boundary(tmp_path, monkeypatch):
+    audio = tmp_path / "audio.mp3"
+    audio.write_bytes(b"audio")
+    live = AsyncMock(return_value="[LANG:RU]\nЛайв")
+    file_model = AsyncMock(return_value="[LANG:RU]\nФайл")
+    monkeypatch.setattr("slovech.worker.transcribe_audio_live", live)
+    monkeypatch.setattr("slovech.worker.transcribe_audio_with_gemini", file_model)
+    assert await transcribe_audio(audio, 60, SMALL_AUDIO_MAX_BYTES) == "[LANG:RU]\nЛайв"
+    assert await transcribe_audio(audio, 60, SMALL_AUDIO_MAX_BYTES + 1) == "[LANG:RU]\nФайл"
+    live.assert_awaited_once()
+    file_model.assert_awaited_once()
+
+
+async def test_large_audio_uses_file_transcriber_in_30_minute_parts(tmp_path, monkeypatch):
+    audio = tmp_path / "audio.mp3"
+    audio.write_bytes(b"audio")
+
+    async def split(*args, **kwargs):
+        assert args[args.index("-segment_time") + 1] == "1800"
+        (tmp_path / "audio_part_000.mp3").write_bytes(b"one")
+        (tmp_path / "audio_part_001.mp3").write_bytes(b"two")
+
+    file_model = AsyncMock(side_effect=["[LANG:RU]\nЧасть 1", "[LANG:RU]\nЧасть 2"])
+    live = AsyncMock()
+    monkeypatch.setattr("slovech.worker.run_process", split)
+    monkeypatch.setattr("slovech.worker.transcribe_audio_with_gemini", file_model)
+    monkeypatch.setattr("slovech.worker.transcribe_audio_live", live)
+    assert (
+        await transcribe_audio(audio, 3600, SMALL_AUDIO_MAX_BYTES + 1)
+        == "[LANG:RU]\nЧасть 1\n\nЧасть 2"
+    )
+    assert file_model.await_count == 2
+    live.assert_not_awaited()
+    assert not list(tmp_path.glob("audio_part_*.mp3"))
+
+
+async def test_openrouter_only_summarizes_and_falls_back_between_models(monkeypatch, settings):
+    settings.openrouter_api_key = SecretStr("test-key")
+    settings.openrouter_models = (
+        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free,liquid/lfm-2.5-2.6b:free"
+    )
+    monkeypatch.setattr("slovech.ai.services.get_settings", lambda: settings)
+    calls = []
+
+    def respond(req):
+        assert str(req.url) == "https://openrouter.ai/api/v1/chat/completions"
+        assert req.headers["authorization"] == "Bearer test-key"
+        calls.append(req)
+        if len(calls) == 1:
+            return httpx.Response(429)
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {
+                            "content": '{"title":"Тест","summary":"Готово","key_points":[]}'
+                        },
+                    }
+                ]
+            },
+        )
+
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        "slovech.ai.services.httpx.AsyncClient",
+        lambda **kwargs: original_client(transport=httpx.MockTransport(respond), **kwargs),
+    )
+    summary = await generate_summary_with_openrouter("Тестовая расшифровка")
+    assert summary["title"] == "Тест"
+    assert len(calls) == 2
+
+
+async def test_summary_requires_openrouter_without_gemini_fallback(monkeypatch, settings):
+    settings.openrouter_api_key = SecretStr("")
+    settings.openrouter_models = ""
+    monkeypatch.setattr("slovech.ai.services.get_settings", lambda: settings)
+    with pytest.raises(SummaryUnavailable):
+        await generate_summary_with_openrouter("Текст")
 
 
 async def test_worker_saved_record_retries_notification_without_ai(repo, lecture, monkeypatch):

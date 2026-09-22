@@ -58,11 +58,13 @@ try {
         }
         $botKey = Read-Key 'Test BOT_TOKEN'
         $aiKey = Read-Key 'GEMINI_API_KEYS'
+        $openRouterKey = Read-Key 'OPENROUTER_API_KEY'
         $template = [IO.File]::ReadAllText((Join-Path $projectRoot 'deploy/windows/keys.example'))
-        $template = $template.Replace('BOT_TOKEN=', "BOT_TOKEN=$botKey").Replace('GEMINI_API_KEYS=', "GEMINI_API_KEYS=$aiKey")
+        $template = $template.Replace('BOT_TOKEN=', "BOT_TOKEN=$botKey").Replace('GEMINI_API_KEYS=', "GEMINI_API_KEYS=$aiKey").Replace('OPENROUTER_API_KEY=', "OPENROUTER_API_KEY=$openRouterKey")
         [IO.File]::WriteAllText((Join-Path $projectRoot '.env.local'), $template, (New-Object Text.UTF8Encoding($false)))
         $botKey = $null
         $aiKey = $null
+        $openRouterKey = $null
         $template = $null
         Write-Host 'Keys saved locally in .env.local. They are not included in the image.'
     }
