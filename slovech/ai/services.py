@@ -58,6 +58,41 @@ async def delete_remote(client, name, key):
         logger.warning("Remote audio cleanup failed; provider retention policy applies")
 
 
+async def delete_interaction(client, interaction_id, key):
+    try:
+        await request(
+            client,
+            "DELETE",
+            f"{BASE}/v1beta/interactions/{interaction_id}",
+            headers={"x-goog-api-key": key},
+        )
+    except Exception:
+        logger.warning("Transcription interaction cleanup failed; provider retention applies")
+
+
+async def wait_for_interaction(client, data, key):
+    interaction = data.get("interaction", data)
+    interaction_id = interaction.get("id", "")
+    if not interaction_id:
+        raise ProviderError("Transcription interaction has no id")
+    for _ in range(120):
+        status = interaction.get("status")
+        if status == "completed":
+            return interaction
+        if status not in {"queued", "in_progress"}:
+            raise ProviderError(f"Transcription interaction ended with status {status}")
+        await asyncio.sleep(5)
+        response = await request(
+            client,
+            "GET",
+            f"{BASE}/v1beta/interactions/{interaction_id}",
+            headers={"x-goog-api-key": key},
+            timeout=60,
+        )
+        interaction = response.json().get("interaction", response.json())
+    raise ProviderError("Transcription interaction polling timeout")
+
+
 async def upload_file_to_gemini(client, file_path, mime_type, api_key):
     path = Path(file_path)
     response = await request(
@@ -172,6 +207,7 @@ async def transcribe_audio_with_gemini(file_path: str, mime_type: str = "audio/m
     async with httpx.AsyncClient(timeout=180, follow_redirects=False) as client:
         for key in keys:
             name = None
+            interaction_id = None
             try:
                 uri, name = await upload_file_to_gemini(client, file_path, mime_type, key)
                 response = await request(
@@ -185,11 +221,15 @@ async def transcribe_audio_with_gemini(file_path: str, mime_type: str = "audio/m
                         "generation_config": {
                             "transcription_config": {"mode": {"type": "verbatim"}}
                         },
-                        "store": False,
+                        "background": True,
+                        "store": True,
                     },
-                    timeout=600,
+                    timeout=60,
                 )
-                return extract_transcription(response.json())
+                interaction = response.json().get("interaction", response.json())
+                interaction_id = interaction.get("id")
+                interaction = await wait_for_interaction(client, interaction, key)
+                return extract_transcription(interaction)
             except (ProviderError, httpx.HTTPError, ValueError, KeyError) as exc:
                 logger.warning(
                     "Audio upload or transcription failed type=%s reason=%s",
@@ -197,6 +237,8 @@ async def transcribe_audio_with_gemini(file_path: str, mime_type: str = "audio/m
                     str(exc),
                 )
             finally:
+                if interaction_id:
+                    await delete_interaction(client, interaction_id, key)
                 if name:
                     await delete_remote(client, name, key)
     raise ProviderError("Transcription providers unavailable")
