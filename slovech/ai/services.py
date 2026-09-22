@@ -221,7 +221,6 @@ async def transcribe_audio_with_gemini(file_path: str, mime_type: str = "audio/m
                         "generation_config": {
                             "transcription_config": {"mode": {"type": "verbatim"}}
                         },
-                        "background": True,
                         "store": True,
                     },
                     timeout=60,
