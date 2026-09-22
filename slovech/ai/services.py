@@ -219,6 +219,7 @@ async def transcribe_audio_with_gemini(file_path: str, mime_type: str = "audio/m
                         "model": "gemini-3.5-transcribe",
                         "input": [{"type": "audio", "uri": uri, "mime_type": mime_type}],
                         "generation_config": {
+                            "max_output_tokens": 65536,
                             "transcription_config": {"mode": {"type": "verbatim"}}
                         },
                         "store": True,
