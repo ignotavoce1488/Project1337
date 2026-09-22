@@ -79,6 +79,14 @@ async def wait_for_interaction(client, data, key):
         status = interaction.get("status")
         if status == "completed":
             return interaction
+        if status == "incomplete" and any(
+            content.get("text", "").strip()
+            for step in interaction.get("steps", [])
+            if step.get("type") == "model_output"
+            for content in step.get("content", [])
+            if content.get("type") == "text"
+        ):
+            return interaction
         if status not in {"queued", "in_progress"}:
             details = interaction.get("incomplete_details") or interaction.get("error")
             raise ProviderError(
@@ -158,7 +166,7 @@ async def upload_file_to_gemini(client, file_path, mime_type, api_key):
 
 def extract_transcription(data: dict) -> str:
     interaction = data.get("interaction", data)
-    if interaction.get("status") != "completed":
+    if interaction.get("status") not in {"completed", "incomplete"}:
         raise ProviderError("Transcription interaction did not complete")
     text = "\n".join(
         content.get("text", "")
