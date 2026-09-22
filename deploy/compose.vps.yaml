@@ -37,7 +37,7 @@ services:
       TELEGRAM_API_URL: http://telegram-bot-api:8081
       TELEGRAM_LOCAL_FILE_ROOT: /var/lib/telegram-bot-api
     volumes:
-      - telegram_bot_api:/var/lib/telegram-bot-api:ro
+      - telegram_bot_api:/var/lib/telegram-bot-api
     mem_limit: 320m
     cpus: 0.8
     depends_on:
