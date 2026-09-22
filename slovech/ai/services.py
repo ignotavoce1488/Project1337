@@ -80,7 +80,10 @@ async def wait_for_interaction(client, data, key):
         if status == "completed":
             return interaction
         if status not in {"queued", "in_progress"}:
-            raise ProviderError(f"Transcription interaction ended with status {status}")
+            details = interaction.get("incomplete_details") or interaction.get("error")
+            raise ProviderError(
+                f"Transcription interaction ended with status {status}, details={details}"
+            )
         await asyncio.sleep(5)
         response = await request(
             client,
@@ -219,7 +222,6 @@ async def transcribe_audio_with_gemini(file_path: str, mime_type: str = "audio/m
                         "model": "gemini-3.5-transcribe",
                         "input": [{"type": "audio", "uri": uri, "mime_type": mime_type}],
                         "generation_config": {
-                            "max_output_tokens": 65536,
                             "transcription_config": {"mode": {"type": "verbatim"}}
                         },
                         "store": True,

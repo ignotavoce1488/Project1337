@@ -24,9 +24,9 @@ from slovech.core.youtube import download_youtube_audio, fetch_youtube_transcrip
 
 logger = logging.getLogger(__name__)
 # The endpoint accepts up to one hour, but dense speech can produce very large
-# responses before that duration. Fifteen-minute parts also stay below the
+# responses before that duration. Ten-minute parts also stay below the
 # model's long-form output ceiling for recordings with very dense speech.
-TRANSCRIPTION_CHUNK_SECONDS = 15 * 60
+TRANSCRIPTION_CHUNK_SECONDS = 10 * 60
 
 
 class BoundedDownload:
