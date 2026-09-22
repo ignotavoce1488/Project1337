@@ -223,7 +223,7 @@ async def transcribe_audio_with_gemini(file_path: str, mime_type: str = "audio/m
                         },
                         "store": True,
                     },
-                    timeout=60,
+                    timeout=600,
                 )
                 interaction = response.json().get("interaction", response.json())
                 interaction_id = interaction.get("id")
