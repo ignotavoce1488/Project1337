@@ -99,7 +99,10 @@ async def upload_file_to_gemini(client, file_path, mime_type, api_key):
     remote = response.json()["file"]
     name = remote["name"]
     try:
-        for _ in range(60):
+        # Long recordings can remain PROCESSING for several minutes after upload.
+        # Keep this below the worker's overall job deadline while avoiding needless
+        # re-uploads through every configured API key.
+        for _ in range(300):
             if remote.get("state") == "ACTIVE":
                 return remote["uri"], name
             if remote.get("state") == "FAILED":
