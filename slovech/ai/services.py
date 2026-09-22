@@ -187,10 +187,11 @@ async def transcribe_audio_with_gemini(file_path: str, mime_type: str = "audio/m
                         },
                         "store": False,
                     },
+                    timeout=600,
                 )
                 return extract_transcription(response.json())
-            except (ProviderError, httpx.HTTPError, ValueError, KeyError):
-                logger.warning("Audio upload or transcription failed")
+            except (ProviderError, httpx.HTTPError, ValueError, KeyError) as exc:
+                logger.warning("Audio upload or transcription failed type=%s", type(exc).__name__)
             finally:
                 if name:
                     await delete_remote(client, name, key)
