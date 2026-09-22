@@ -23,9 +23,9 @@ from slovech.core.telegram import create_bot
 from slovech.core.youtube import download_youtube_audio, fetch_youtube_transcript
 
 logger = logging.getLogger(__name__)
-# The dedicated Gemini transcription endpoint accepts up to one hour per unary request.
-# Keep a small margin for containers whose metadata rounds duration down.
-TRANSCRIPTION_CHUNK_SECONDS = 55 * 60
+# The endpoint accepts up to one hour, but dense speech can produce very large
+# responses before that duration. Thirty-minute parts keep output reliable.
+TRANSCRIPTION_CHUNK_SECONDS = 30 * 60
 
 
 class BoundedDownload:
@@ -69,8 +69,11 @@ async def transcribe_audio(final: Path, duration: float) -> str:
         "segment",
         "-segment_time",
         str(TRANSCRIPTION_CHUNK_SECONDS),
-        "-c",
-        "copy",
+        "-vn",
+        "-c:a",
+        "libmp3lame",
+        "-b:a",
+        "64k",
         str(pattern),
         timeout=120,
     )
