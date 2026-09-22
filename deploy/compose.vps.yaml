@@ -1,21 +1,50 @@
 # Existing nginx terminates HTTPS. Run with -f compose.yaml -f deploy/compose.vps.yaml.
 services:
+  telegram-bot-api:
+    image: aiogram/telegram-bot-api:10.3@sha256:83ec3f119aa68db1602c0cd3634a42f4a399051411df8ebb70f3e62ade67eb80
+    restart: unless-stopped
+    environment:
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID:?Set TELEGRAM_API_ID in .env}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH:?Set TELEGRAM_API_HASH in .env}
+      TELEGRAM_LOCAL: '1'
+      TELEGRAM_VERBOSITY: '1'
+    volumes:
+      - telegram_bot_api:/var/lib/telegram-bot-api
+    read_only: true
+    tmpfs:
+      - /tmp/telegram-bot-api:size=64m,mode=1777,uid=101,gid=101
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 192m
+    cpus: 0.5
+    networks: [app]
   api:
     ports: ['127.0.0.1:18000:8000']
     command: [uvicorn, 'slovech.server:app', --host, 0.0.0.0, --port, '8000', --workers, '1', --proxy-headers, --forwarded-allow-ips, '172.30.80.1', --no-access-log]
     mem_limit: 192m
     cpus: 0.5
   bot:
-    extra_hosts: ['host.docker.internal:host-gateway']
+    environment:
+      TELEGRAM_API_URL: http://telegram-bot-api:8081
     mem_limit: 160m
     cpus: 0.3
+    depends_on:
+      telegram-bot-api:
+        condition: service_started
   worker:
-    # Match the existing local Telegram API file owner; retain app storage group.
+    # Match the local Telegram API file owner; retain app storage group.
     user: '101:10001'
+    environment:
+      TELEGRAM_API_URL: http://telegram-bot-api:8081
+      TELEGRAM_LOCAL_FILE_ROOT: /var/lib/telegram-bot-api
     volumes:
-      - /var/lib/telegram-bot-api:/var/lib/telegram-bot-api:ro
-    extra_hosts: ['host.docker.internal:host-gateway']
+      - telegram_bot_api:/var/lib/telegram-bot-api:ro
     mem_limit: 320m
     cpus: 0.8
+    depends_on:
+      telegram-bot-api:
+        condition: service_started
   caddy:
     profiles: [standalone-edge]
+
+volumes:
+  telegram_bot_api:

@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     openrouter_models: str = ""
     youtube_proxy: str = ""
     auth_max_age: int = 3600
-    max_upload_bytes: int = 20 * 1024 * 1024
+    max_upload_bytes: int = 300 * 1024 * 1024
     max_audio_seconds: int = 10800
     max_pending_jobs: int = 100
     max_user_jobs: int = 3
