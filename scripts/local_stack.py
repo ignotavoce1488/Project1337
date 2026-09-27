@@ -35,7 +35,7 @@ def child_environment(settings: Settings, domain: str) -> dict[str, str]:
         "ENVIRONMENT": "production",
         "DOMAIN": domain,
         "BOT_TOKEN": settings.bot_token.get_secret_value(),
-        "GEMINI_API_KEYS": settings.gemini_api_keys.get_secret_value(),
+        "AITUNNEL_API_KEY": settings.aitunnel_api_key.get_secret_value(),
         "OPENROUTER_API_KEY": settings.openrouter_api_key.get_secret_value(),
         "OPENROUTER_MODELS": settings.openrouter_models,
         "DATA_DIR": str(settings.data_dir),

@@ -33,6 +33,7 @@ def configure_logging():
         settings.bot_token.get_secret_value(),
         settings.admin_secret.get_secret_value(),
         settings.openrouter_api_key.get_secret_value(),
+        settings.aitunnel_api_key.get_secret_value(),
         *settings.gemini_api_keys.get_secret_value().split(","),
     ]
     handler.setFormatter(JsonFormatter(secret.strip() for secret in secrets))

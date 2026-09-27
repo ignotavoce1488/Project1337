@@ -64,6 +64,15 @@ def test_ownership_all_routes(client, repo, lecture, headers, settings):
     assert client.get("/api/lecture/latest", headers=headers).json()["id"] == lecture.id
 
 
+def test_min_app_reads_bot_language(client, repo, headers):
+    repo.set_preferences("123", interface_language="ar")
+    response = client.get("/api/preferences", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["interface_language"] == "ar"
+    assert "speech_language" not in response.json()
+    assert client.get("/api/preferences").status_code == 401
+
+
 def test_audio_symlink_denied(client, repo, lecture, headers, settings, tmp_path):
     repo.save(lecture)
     outside = tmp_path / "secret"
@@ -115,9 +124,16 @@ def test_static_health_and_security_headers(client):
         if path.startswith(("/app", "/static/")):
             assert response.headers["cache-control"] == "no-store"
 
-    html = client.get("/app?v=10").text
-    for asset in ("style.css", "bootstrap.js", "api.js", "ui.js", "theme.js", "app.js"):
-        assert f"{asset}?v=10" in html
+    html = client.get("/app?v=13").text
+    for asset in ("style.css", "bootstrap.js", "api.js", "i18n.js", "ui.js", "theme.js", "app.js"):
+        assert f"{asset}?v=" in html
+
+
+def test_legal_documents_are_not_public_when_enforcement_is_disabled(client):
+    for kind in ("terms", "privacy", "consent"):
+        response = client.get(f"/legal/{kind}")
+        assert response.status_code == 404
+        assert "Робиуззаман" not in response.text
 
 
 def test_rate_limit_ignores_spoofed_forwarding(client, headers):

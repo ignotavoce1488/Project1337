@@ -9,7 +9,7 @@ function formatLectureDate(value) {
   if (!value) return 'Сегодня';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat('ru-RU', {
+  return new Intl.DateTimeFormat(uiLanguage, {
     day: 'numeric', month: 'long', year: date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric'
   }).format(date);
 }
@@ -22,11 +22,15 @@ const dateBadgeEl = document.getElementById('dateBadge');
 const statusPillEl = document.getElementById('statusPill');
 const takeawaysSection = document.getElementById('takeawaysSection');
 const takeawaysList = document.getElementById('takeawaysList');
+const takeawaysMoreBtn = document.getElementById('takeawaysMoreBtn');
+const visibleTakeawaysCount = 3;
+let takeawaysExpanded = false;
 const summaryBox = document.getElementById('summaryBox');
 const transcriptBox = document.getElementById('transcriptBox');
 const copyBtn = document.getElementById('copyBtn');
 const transcriptSearch = document.getElementById('transcriptSearch');
 const clearSearchBtn = document.getElementById('clearSearchBtn');
+const currentTranscriptText = () => currentLecture?.formatted_transcription || currentLecture?.transcription || '';
 
 // History Drawer Elements
 const openHistoryBtn = document.getElementById('openHistoryBtn');
@@ -40,6 +44,30 @@ let backdropPointer = null;
 let cardPointer = null;
 let suppressCardClick = false;
 
+function transcriptParagraphs(text) {
+  const maxLength = 360;
+  const minLength = 170;
+  const paragraphs = [];
+  for (const block of text.trim().split(/\n\s*\n/)) {
+    const words = block.trim().split(/\s+/).filter(Boolean);
+    let start = 0;
+    while (start < words.length) {
+      let end = start;
+      let length = 0;
+      let sentenceEnd = -1;
+      while (end < words.length && (length + words[end].length + 1 <= maxLength || end === start)) {
+        length += words[end].length + 1;
+        if (length >= minLength && /[.!?…]["»”’)]*$/.test(words[end])) sentenceEnd = end + 1;
+        end += 1;
+      }
+      if (end < words.length && sentenceEnd > start) end = sentenceEnd;
+      paragraphs.push(words.slice(start, end).join(' '));
+      start = end;
+    }
+  }
+  return paragraphs;
+}
+
 function renderTranscript(rawText, searchQuery = '') {
   if (!rawText || !rawText.trim()) {
     transcriptBox.innerHTML = '<p style="text-align:center; padding: 24px; color: var(--text-dim);">Расшифровка текста отсутствует.</p>';
@@ -50,10 +78,7 @@ function renderTranscript(rawText, searchQuery = '') {
     .replace(/^Вот (точная|дословная|полная)[^\n]*:\s*/i, '')
     .trim();
 
-  const paragraphs = cleaned
-    .split(/\n\s*\n/)
-    .map(p => p.trim())
-    .filter(p => p.length > 0);
+  const paragraphs = transcriptParagraphs(cleaned);
 
   const highlight = (text) => {
     if (!searchQuery) return escapeHtml(text);
@@ -69,13 +94,10 @@ function renderTranscript(rawText, searchQuery = '') {
   };
 
   let html = '';
-  paragraphs.forEach((p, idx) => {
+  paragraphs.forEach((p) => {
     // Clean source text before escaping; highlighting must never edit HTML or entities.
     const displayText = p.replace(/(?:^|\s)[\[\(]?(\d{1,2}:\d{2}(?::\d{2})?)[\]\)]?\s*[:\-—]?\s*/g, ' ').trim();
-    html += highlight(displayText);
-    if (idx < paragraphs.length - 1) {
-      html += '<br><br>';
-    }
+    if (displayText) html += `<p class="transcript-block">${highlight(displayText)}</p>`;
   });
 
   transcriptBox.innerHTML = html;
@@ -110,19 +132,88 @@ function applyIOSSelectionFix(container) {
 
 const langToggleBtn = document.getElementById('langToggleBtn');
 const langToggleText = document.getElementById('langToggleText');
+const translateBtn = document.getElementById('translateBtn');
+const translateStatus = document.getElementById('translateStatus');
 let currentAppLang = 'ru';
+let translationPending = false;
+
+function translatedLanguage(data) {
+  if (data.translation_language && data.summary_translated) return data.translation_language;
+  if (data.language === 'en' && data.summary_ru) return 'ru';
+  return null;
+}
+
+function translatedContent(data) {
+  return Boolean(translatedLanguage(data) && currentAppLang === translatedLanguage(data));
+}
+
+function updateLanguageSwap(data) {
+  const wrapper = document.getElementById('langToggleWrapper');
+  const translation = translatedLanguage(data);
+  if (!wrapper) return;
+  const canSwap = Boolean(translation && translation === uiLanguage && translation !== data.language);
+  const canTranslate = data.language !== uiLanguage && !canSwap;
+  wrapper.style.display = canSwap || canTranslate ? 'flex' : 'none';
+  if (langToggleBtn) langToggleBtn.style.display = canSwap ? '' : 'none';
+  if (translateBtn) {
+    translateBtn.style.display = canTranslate ? '' : 'none';
+    translateBtn.textContent = translateCopy(0);
+    translateBtn.disabled = translationPending;
+  }
+  if (langToggleText && canSwap) {
+    const showingTranslation = translatedContent(data);
+    langToggleText.textContent = languageSwapLabel(showingTranslation, showingTranslation ? data.language : translation);
+  }
+}
+
+if (translateBtn) {
+  translateBtn.addEventListener('click', async () => {
+    if (!currentLecture || translationPending) return;
+    const lectureId = currentLecture.id;
+    translationPending = true;
+    translateBtn.disabled = true;
+    if (translateStatus) translateStatus.textContent = translateCopy(1);
+    try {
+      const queued = await apiFetch(`/api/lecture/${encodeURIComponent(lectureId)}/translation`, {method: 'POST'});
+      if (!queued.ok) throw new Error('QUEUE_FAILED');
+      let state = (await queued.json()).state;
+      for (let attempt = 0; attempt < 300 && !['ready', 'done', 'failed'].includes(state); attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        const response = await apiFetch(`/api/lecture/${encodeURIComponent(lectureId)}/translation`);
+        if (!response.ok) throw new Error('STATUS_FAILED');
+        state = (await response.json()).state;
+      }
+      if (state !== 'ready' && state !== 'done') throw new Error('TRANSLATION_FAILED');
+      if (currentLecture?.id === lectureId) await loadLecture(lectureId);
+    } catch (_) {
+      if (currentLecture?.id === lectureId && translateStatus) translateStatus.textContent = translateCopy(2);
+    } finally {
+      translationPending = false;
+      if (currentLecture?.id === lectureId) {
+        translateBtn.disabled = false;
+        updateLanguageSwap(currentLecture);
+        if (translateStatus && translatedLanguage(currentLecture) === uiLanguage) translateStatus.textContent = '';
+      }
+    }
+  });
+}
 
 function renderLectureContent(data, lang) {
-  const isEn = (lang === 'en');
+  const translated = translatedContent(data);
 
   // Title
-  lectureTitleEl.textContent = isEn ? (data.title || 'Summary') : (data.title_ru || data.title || 'Конспект аудиозаписи');
+  lectureTitleEl.textContent = translated
+    ? (data.title_translated || data.title_ru || data.title)
+    : (data.title || 'Summary');
 
   // Takeaways
-  const keyPoints = isEn ? data.key_points : (data.key_points_ru || data.key_points);
+  const keyPoints = translated
+    ? (data.key_points_translated || data.key_points_ru || data.key_points)
+    : data.key_points;
   if (keyPoints && keyPoints.length > 0) {
     takeawaysSection.style.display = 'block';
-    takeawaysList.innerHTML = keyPoints.map((pt, index) => {
+    const visiblePoints = takeawaysExpanded ? keyPoints : keyPoints.slice(0, visibleTakeawaysCount);
+    takeawaysList.innerHTML = visiblePoints.map((pt, index) => {
       const cleanPt = pt.replace(/^[\s*\-]+/g, '').replace(/[*_`#]/g, '');
       return `
       <div class="takeaway-card">
@@ -131,15 +222,26 @@ function renderLectureContent(data, lang) {
       </div>
     `;
     }).join('');
+    const hiddenCount = keyPoints.length - visibleTakeawaysCount;
+    takeawaysMoreBtn.style.display = hiddenCount > 0 ? 'block' : 'none';
+    takeawaysMoreBtn.setAttribute('aria-expanded', String(takeawaysExpanded && hiddenCount > 0));
+    takeawaysMoreBtn.textContent = takeawaysExpanded ? 'Свернуть' : `Показать ещё ${hiddenCount}`;
   } else {
     takeawaysSection.style.display = 'none';
+    takeawaysMoreBtn.style.display = 'none';
   }
 
   // Summary
-  const summaryText = isEn ? data.summary : (data.summary_ru || data.summary);
+  const summaryText = translated ? (data.summary_translated || data.summary_ru || data.summary) : data.summary;
   summaryBox.innerHTML = parseMarkdown(summaryText);
   applyIOSSelectionFix(summaryBox);
 }
+
+takeawaysMoreBtn.addEventListener('click', () => {
+  if (!currentLecture) return;
+  takeawaysExpanded = !takeawaysExpanded;
+  renderLectureContent(currentLecture, currentAppLang);
+});
 
 // === Load Lecture Data ===
 async function loadLecture(id = null) {
@@ -153,7 +255,7 @@ async function loadLecture(id = null) {
     const res = await apiFetch(endpoint);
     if (!res.ok) {
       if (res.status === 401) throw new Error('AUTH_REQUIRED');
-      if (res.status === 403) throw new Error('Этот конспект принадлежит другому пользователю.');
+      if (res.status === 403) throw new Error('Сначала примите условия в чате с ботом через /start.');
       throw new Error('Конспект не найден');
     }
     const data = await res.json();
@@ -164,36 +266,30 @@ async function loadLecture(id = null) {
       emptyStateEl.style.display = 'block';
       const emptyIcon = emptyStateEl.querySelector('.empty-icon');
       if (emptyIcon) emptyIcon.textContent = '🎙';
-      emptyStateEl.querySelector('h2').textContent = 'Здесь появятся ваши конспекты';
-      emptyStateEl.querySelector('p').innerHTML = 'Отправьте любое аудио или голосовое сообщение боту <b>@slovech_bot</b>, и здесь появится конспект.';
+      emptyStateEl.querySelector('h2').textContent = ui(2);
+      emptyStateEl.querySelector('p').textContent = ui(3);
       lectureViewEl.style.display = 'none';
       if (historyBadge) historyBadge.style.display = 'none';
       return;
     }
 
     currentLecture = data;
+    takeawaysExpanded = false;
     emptyStateEl.style.display = 'none';
     lectureViewEl.style.display = 'block';
 
     // Populate metadata
     dateBadgeEl.textContent = formatLectureDate(data.created_at);
-    statusPillEl.textContent = targetId ? 'Архивная запись' : 'Последний конспект';
+    statusPillEl.textContent = targetId ? ui(12) : ui(4);
 
     // Language Toggle Setup
-    const langToggleWrapper = document.getElementById('langToggleWrapper');
-    if (data.language === 'en' && data.summary_ru) {
-      currentAppLang = 'ru'; // Default to Russian if available
-      if (langToggleWrapper) langToggleWrapper.style.display = 'flex';
-      if (langToggleText) langToggleText.textContent = 'Показать оригинал (EN)';
-    } else {
-      currentAppLang = data.language || 'ru';
-      if (langToggleWrapper) langToggleWrapper.style.display = 'none';
-    }
+    currentAppLang = translatedLanguage(data) === uiLanguage ? uiLanguage : (data.language || 'auto');
+    updateLanguageSwap(data);
 
     renderLectureContent(data, currentAppLang);
     if (transcriptSearch) transcriptSearch.value = '';
     if (clearSearchBtn) clearSearchBtn.style.display = 'none';
-    renderTranscript(data.transcription || '');
+    renderTranscript(currentTranscriptText());
 
     // Setup Audio Player
     if (currentLecture && currentLecture.transcription) {
@@ -239,6 +335,8 @@ async function loadHistoryCount() {
 
 let allHistoryItems = [];
 const historySearchInput = document.getElementById('historySearchInput');
+let historySearchRequest = 0;
+let historySearchTimer = null;
 
 function renderHistoryList(items) {
   if (!items || items.length === 0) {
@@ -287,16 +385,23 @@ function renderHistoryList(items) {
 
 if (historySearchInput) {
   historySearchInput.addEventListener('input', (e) => {
-    const query = e.target.value.trim().toLowerCase();
+    const query = e.target.value.trim();
+    const request = ++historySearchRequest;
+    if (historySearchTimer) clearTimeout(historySearchTimer);
     if (!query) {
       renderHistoryList(allHistoryItems);
       return;
     }
-    const filtered = allHistoryItems.filter(item =>
-      (item.title && item.title.toLowerCase().includes(query)) ||
-      (item.preview && item.preview.toLowerCase().includes(query))
-    );
-    renderHistoryList(filtered);
+    historySearchTimer = setTimeout(async () => {
+      try {
+        const response = await apiFetch(`/api/lectures/search?q=${encodeURIComponent(query)}`);
+        if (!response.ok) throw new Error('Search unavailable');
+        const found = await response.json();
+        if (request === historySearchRequest) renderHistoryList(found);
+      } catch (_) {
+        if (request === historySearchRequest) historyList.textContent = searchError();
+      }
+    }, 250);
   });
 }
 
@@ -340,6 +445,8 @@ async function openHistory() {
   if (closeHistoryBtn) closeHistoryBtn.focus();
 
   // Reset search
+  historySearchRequest += 1;
+  if (historySearchTimer) clearTimeout(historySearchTimer);
   if (historySearchInput) historySearchInput.value = '';
 
   historyList.innerHTML = `
@@ -436,15 +543,15 @@ async function copyText(text, label) {
 
 function currentSummaryText() {
   if (!currentLecture) return '';
-  const translated = currentAppLang === 'ru';
-  const title = translated ? (currentLecture.title_ru || currentLecture.title) : currentLecture.title;
-  const summary = translated ? (currentLecture.summary_ru || currentLecture.summary) : currentLecture.summary;
+  const translated = translatedContent(currentLecture);
+  const title = translated ? (currentLecture.title_translated || currentLecture.title_ru || currentLecture.title) : currentLecture.title;
+  const summary = translated ? (currentLecture.summary_translated || currentLecture.summary_ru || currentLecture.summary) : currentLecture.summary;
   return `${title || ''}\n\n${summary || ''}`;
 }
 
 if (copyBtn) {
   copyBtn.addEventListener('click', () => {
-    copyText(currentTab === 'summary' ? currentSummaryText() : (currentLecture?.transcription || ''));
+    copyText(currentTab === 'summary' ? currentSummaryText() : currentTranscriptText());
   });
 }
 
@@ -459,7 +566,7 @@ if (copySummaryBtn) {
 const copyTranscriptBtn = document.getElementById('copyTranscriptBtn');
 if (copyTranscriptBtn) {
   copyTranscriptBtn.addEventListener('click', () => {
-    const text = currentLecture?.transcription || '';
+    const text = currentTranscriptText();
     copyText(text, 'Расшифровка скопирована');
   });
 }
@@ -469,15 +576,15 @@ if (transcriptSearch && clearSearchBtn) {
   transcriptSearch.addEventListener('input', (e) => {
     const query = e.target.value.trim();
     clearSearchBtn.style.display = query ? 'block' : 'none';
-    if (!currentLecture || !currentLecture.transcription) return;
-    renderTranscript(currentLecture.transcription, query);
+    if (!currentTranscriptText()) return;
+    renderTranscript(currentTranscriptText(), query);
   });
 
   clearSearchBtn.addEventListener('click', () => {
     transcriptSearch.value = '';
     clearSearchBtn.style.display = 'none';
-    if (currentLecture && currentLecture.transcription) {
-      renderTranscript(currentLecture.transcription);
+    if (currentTranscriptText()) {
+      renderTranscript(currentTranscriptText());
     }
   });
 }
@@ -500,15 +607,17 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   if (typeof initAccentTheme === 'function') initAccentTheme();
 
-  loadLecture();
+  loadInterfaceLanguage().finally(() => loadLecture());
 });
 
 if (langToggleBtn) {
   langToggleBtn.addEventListener('click', () => {
     if (typeof triggerHaptic !== 'undefined') triggerHaptic('impact', 'light');
-    currentAppLang = currentAppLang === 'ru' ? 'en' : 'ru';
-    if (langToggleText) langToggleText.textContent = currentAppLang === 'ru' ? 'Показать оригинал (EN)' : 'Читать перевод (RU)';
-    if (currentLecture) renderLectureContent(currentLecture, currentAppLang);
+    if (!currentLecture) return;
+    currentAppLang = translatedContent(currentLecture)
+      ? currentLecture.language : translatedLanguage(currentLecture);
+    updateLanguageSwap(currentLecture);
+    renderLectureContent(currentLecture, currentAppLang);
   });
 }
 

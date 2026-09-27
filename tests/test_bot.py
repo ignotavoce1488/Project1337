@@ -5,9 +5,22 @@ import pytest
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import EditMessageText
 
-from slovech.bot_handlers.handlers import handle_download_docx, is_admin
+from slovech.bot_handlers.handlers import (
+    handle_download_docx,
+    handle_privacy,
+    is_admin,
+    send_welcome,
+)
+from slovech.bot import register_bot_commands
 from slovech.core.runtime import process_lock
 from slovech.worker import notify
+
+
+def test_language_preferences_are_independent_and_persist(repo):
+    repo.set_preferences("123", interface_language="ar")
+    assert repo.get_preferences("123") == {"interface_language": "ar"}
+    with pytest.raises(ValueError):
+        repo.set_preferences("123", interface_language="xx")
 
 
 async def test_callback_denies_other_owner(repo, lecture):
@@ -19,6 +32,25 @@ async def test_callback_denies_other_owner(repo, lecture):
     await handle_download_docx(query, bot, repo)
     bot.send_document.assert_not_called()
     assert query.answer.await_args.kwargs["show_alert"]
+
+
+async def test_welcome_and_privacy_command_do_not_expose_documents_or_contact(repo):
+    message = SimpleNamespace(answer=AsyncMock())
+    await send_welcome(message, "https://example.test")
+    welcome = message.answer.await_args.args[0]
+    assert "/legal/" not in welcome
+    assert "gmail" not in welcome
+    await handle_privacy(message, repo)
+    privacy = message.answer.await_args.args[0]
+    assert "/legal/" not in privacy
+    assert "gmail" not in privacy
+
+
+async def test_slash_menu_registers_language_command():
+    bot = AsyncMock()
+    await register_bot_commands(bot)
+    commands = bot.set_my_commands.await_args.args[0]
+    assert {item.command for item in commands} >= {"start", "language"}
 
 
 async def test_callback_path_traversal_denied(repo):
@@ -49,12 +81,19 @@ def test_admin_username_grants_privilege(settings, monkeypatch):
     assert is_admin(SimpleNamespace(id=123, username="different"))
 
 
-async def test_notification_retry_is_idempotent(settings, lecture):
+async def test_notification_retry_is_idempotent(settings, repo, lecture):
+    repo.enqueue("lecture1", "test-source", "123", {"chat_id": 123, "status_id": 456})
     bot = AsyncMock()
+    bot.send_message.return_value = SimpleNamespace(message_id=789)
     bot.edit_message_text.side_effect = TelegramBadRequest(
         method=EditMessageText(text="test"), message="Bad Request: message is not modified"
     )
-    await notify(bot, {"payload": {"chat_id": 123, "status_id": 456}}, lecture, settings)
+    job = {"id": "lecture1", "payload": {"chat_id": 123, "status_id": 456}}
+    await notify(bot, job, lecture, settings, repo)
+    await notify(bot, job, lecture, settings, repo)
+    assert bot.send_message.await_count == 1
+    assert bot.send_message.await_args.kwargs["chat_id"] == 123
+    assert repo.result_message_id("lecture1") == 789
 
 
 def test_only_one_worker_owns_local_storage(tmp_path):

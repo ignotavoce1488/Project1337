@@ -5,10 +5,10 @@ import sys
 import tarfile
 
 
-def test_backup_restores_database_and_media(repo, lecture, settings, tmp_path):
+def test_backup_restores_database_without_media(repo, lecture, settings, tmp_path):
     repo.save(lecture)
     (settings.audio_dir / "lecture1.mp3").write_bytes(b"test audio")
-    destination = tmp_path / "backup.tar.gz"
+    destination = settings.data_dir / "backups" / "backup.tar.gz"
     env = {
         **os.environ,
         "DATA_DIR": str(settings.data_dir),
@@ -30,7 +30,7 @@ def test_backup_restores_database_and_media(repo, lecture, settings, tmp_path):
         assert connection.execute("SELECT user_id FROM lectures").fetchone()[0] == "123"
     finally:
         connection.close()
-    assert (restored / "audio/lecture1.mp3").read_bytes() == b"test audio"
+    assert not (restored / "audio").exists()
     repeated = subprocess.run(
         [sys.executable, "-m", "scripts.backup", str(destination)], env=env, capture_output=True
     )

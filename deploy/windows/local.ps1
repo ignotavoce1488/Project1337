@@ -57,10 +57,10 @@ try {
             return $value
         }
         $botKey = Read-Key 'Test BOT_TOKEN'
-        $aiKey = Read-Key 'GEMINI_API_KEYS'
+        $aiKey = Read-Key 'AITUNNEL_API_KEY'
         $openRouterKey = Read-Key 'OPENROUTER_API_KEY'
         $template = [IO.File]::ReadAllText((Join-Path $projectRoot 'deploy/windows/keys.example'))
-        $template = $template.Replace('BOT_TOKEN=', "BOT_TOKEN=$botKey").Replace('GEMINI_API_KEYS=', "GEMINI_API_KEYS=$aiKey").Replace('OPENROUTER_API_KEY=', "OPENROUTER_API_KEY=$openRouterKey")
+        $template = $template.Replace('BOT_TOKEN=', "BOT_TOKEN=$botKey").Replace('AITUNNEL_API_KEY=', "AITUNNEL_API_KEY=$aiKey").Replace('OPENROUTER_API_KEY=', "OPENROUTER_API_KEY=$openRouterKey")
         [IO.File]::WriteAllText((Join-Path $projectRoot '.env.local'), $template, (New-Object Text.UTF8Encoding($false)))
         $botKey = $null
         $aiKey = $null

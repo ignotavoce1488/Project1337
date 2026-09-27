@@ -17,10 +17,65 @@ from aiogram.types import (
 
 from slovech.core.config import SAFE_ID_REGEX, get_settings
 from slovech.core.documents import render_docx
-from slovech.core.storage import QueueFull, Repository
+from slovech.core.languages import LANGUAGES, bot_copy, normalize_language
+from slovech.core.legal import document_version, public_url
+from slovech.core.storage import ProcessingCancelled, QueueFull, Repository
 from slovech.core.youtube import youtube_video_id
 
 router = Router()
+
+
+def interface_language(repository: Repository, user) -> str:
+    saved = repository.get_preferences(str(user.id))["interface_language"] if user else None
+    return saved or normalize_language(getattr(user, "language_code", None), "ru")
+
+
+async def ensure_interface_language(repository: Repository, user) -> str:
+    code = interface_language(repository, user)
+    if user and not repository.get_preferences(str(user.id))["interface_language"]:
+        await asyncio.to_thread(repository.set_preferences, str(user.id), interface_language=code)
+    return code
+
+
+def language_keyboard() -> InlineKeyboardMarkup:
+    rows = []
+    buttons = [InlineKeyboardButton(text=name, callback_data=f"language:interface:{code}")
+               for code, name in LANGUAGES.items()]
+    for index in range(0, len(buttons), 2):
+        rows.append(buttons[index:index + 2])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.message(Command("language", "lang"))
+async def choose_language(message: Message, repository: Repository):
+    if message.chat.type != "private" or not message.from_user:
+        return
+    await message.answer("🌐 Interface language / Язык интерфейса", reply_markup=language_keyboard())
+
+
+@router.callback_query(F.data.startswith("language:"))
+async def save_language(query: CallbackQuery, repository: Repository):
+    if not query.message or query.message.chat.type != "private" or query.message.chat.id != query.from_user.id:
+        await query.answer("Open this in a private chat.", show_alert=True)
+        return
+    _, kind, code = ((query.data or "").split(":") + [""])[:3]
+    if kind == "menu":
+        await query.answer()
+        await query.message.edit_text("🌐 Interface language / Язык интерфейса",
+                                      reply_markup=language_keyboard())
+        return
+    if kind != "interface" or code not in LANGUAGES:
+        await query.answer("Invalid language.", show_alert=True)
+        return
+    try:
+        await asyncio.to_thread(repository.set_preferences, str(query.from_user.id),
+                                interface_language=code)
+    except ProcessingCancelled:
+        await query.answer("Account is being deleted.", show_alert=True)
+        return
+    await query.answer("Saved")
+    await query.message.edit_text(f"✅ {LANGUAGES[code]}")
+    await send_welcome(query.message, repository.settings.domain, code)
 
 
 def is_admin(user) -> bool:
@@ -32,21 +87,205 @@ def is_admin(user) -> bool:
 
 
 @router.message(CommandStart())
-async def handle_start(message: Message):
+async def handle_start(message: Message, repository: Repository):
+    if message.chat.type != "private":
+        return
+    if message.from_user:
+        stage = await asyncio.to_thread(repository.legal_stage, str(message.from_user.id))
+        if stage == "deleting" or (repository.settings.legal_enforcement and stage != "ready"):
+            await send_legal_prompt(message, stage, repository.settings.domain)
+            return
+        await asyncio.to_thread(repository.touch, str(message.from_user.id))
+    await send_welcome(message, repository.settings.domain,
+                       await ensure_interface_language(repository, message.from_user))
+
+
+@router.message(Command("revoke", "delete_me"))
+async def handle_revoke(message: Message, repository: Repository):
+    if message.from_user and message.chat.type == "private":
+        if await asyncio.to_thread(repository.legal_stage, str(message.from_user.id)) == "deleting":
+            await send_legal_prompt(message, "deleting", repository.settings.domain)
+            return
+        token = await asyncio.to_thread(repository.deletion_confirmation, str(message.from_user.id))
+        await message.answer(
+            "Удалить данные аккаунта? Будут остановлены задания и удалены "
+            "все конспекты, расшифровки и история согласий, включая управляемые резервные копии. "
+            "Отменить удаление после подтверждения нельзя.\n\n"
+            "Для подтверждения уничтожения на 3 года останется минимальная запись: Telegram ID, "
+            "дата, причина и перечень удалённых категорий, без содержимого записей.\n\n"
+            "Сообщения в Telegram и копии у внешних поставщиков этой командой не удаляются.\n\n"
+            "Кнопка подтверждения действует 10 минут.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="Да, удалить мои данные", callback_data=f"erase:{token}"
+                        ),
+                        InlineKeyboardButton(text="Отмена", callback_data=f"erase_cancel:{token}"),
+                    ]
+                ]
+            ),
+        )
+
+
+@router.callback_query(F.data.startswith("erase:") | F.data.startswith("erase_cancel:"))
+async def handle_deletion_choice(query: CallbackQuery, bot: Bot, repository: Repository):
+    if (
+        not query.message
+        or query.message.chat.type != "private"
+        or query.message.chat.id != query.from_user.id
+    ):
+        await query.answer("Подтверждение доступно только в вашем личном чате.", show_alert=True)
+        return
+    action, token = (query.data or "").split(":", 1)
+    user_id = str(query.from_user.id)
+    if action == "erase_cancel":
+        await asyncio.to_thread(repository.cancel_deletion_confirmation, user_id, token)
+        await query.answer("Удаление отменено.")
+        await query.message.edit_reply_markup(reply_markup=None)
+        return
+    confirmed = await asyncio.to_thread(repository.confirm_deletion, user_id, token)
+    if not confirmed:
+        await query.answer("Подтверждение устарело. Отправьте /delete_me заново.", show_alert=True)
+        return
+    await query.answer("Запрос принят.")
+    await query.message.edit_reply_markup(reply_markup=None)
+    await bot.send_message(
+        query.from_user.id,
+        "Доступ заблокирован, задания остановлены. Удаление данных запущено; "
+        "сообщу о завершении отдельно.",
+    )
+
+
+@router.message(Command("privacy", "terms"))
+async def handle_privacy(message: Message, repository: Repository):
+    if not repository.settings.legal_enforcement:
+        await message.answer("Документы пока не опубликованы.")
+        return
+    await message.answer(
+        f"Соглашение: {public_url(repository.settings.domain, 'terms')}\n"
+        f"Политика: {public_url(repository.settings.domain, 'privacy')}\n"
+        f"Согласие: {public_url(repository.settings.domain, 'consent')}\n\n"
+        "Удаление данных: /delete_me (с подтверждением)."
+    )
+
+
+async def send_welcome(message: Message, domain: str, language: str = "ru"):
+    texts = {
+        "ru": ("Открыть конспекты", "Отправьте аудио, голосовое сообщение или ссылку на YouTube. Конспект появится в вашем личном профиле."),
+        "en": ("Open notes", "Send audio, a voice message, or a YouTube link. Your notes will appear in your private library."),
+        "es": ("Abrir notas", "Envía audio, un mensaje de voz o un enlace de YouTube. Las notas aparecerán en tu biblioteca."),
+        "fr": ("Ouvrir les notes", "Envoyez un fichier audio, un message vocal ou un lien YouTube. Vos notes apparaîtront dans votre bibliothèque."),
+        "de": ("Notizen öffnen", "Sende Audio, eine Sprachnachricht oder einen YouTube-Link. Deine Notizen erscheinen in deiner Bibliothek."),
+        "it": ("Apri appunti", "Invia un audio, un messaggio vocale o un link YouTube. Gli appunti appariranno nella tua raccolta."),
+        "pt": ("Abrir notas", "Envie um áudio, uma mensagem de voz ou um link do YouTube. As notas aparecerão na sua biblioteca."),
+        "tr": ("Notları aç", "Ses dosyası, sesli mesaj veya YouTube bağlantısı gönderin. Notlarınız kitaplığınızda görünecek."),
+        "ar": ("افتح الملخصات", "أرسل ملفاً صوتياً أو رسالة صوتية أو رابط يوتيوب. ستظهر ملخصاتك في مكتبتك."),
+        "hi": ("नोट्स खोलें", "ऑडियो, वॉइस मैसेज या YouTube लिंक भेजें। नोट्स आपकी लाइब्रेरी में दिखेंगे।"),
+        "tk": ("Bellikleri aç", "Audio, ses habaryny ýa-da YouTube salgysyny iberiň. Bellikler kitaphanaňyzda peýda bolar."),
+    }
+    label, body = texts.get(language, texts["en"])
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Открыть конспекты",
-                    web_app=WebAppInfo(url=f"{get_settings().domain}/app?v=10"),
+                    text=label,
+                    web_app=WebAppInfo(url=f"{domain}/app?v=13"),
                 )
-            ]
+            ],
+            [InlineKeyboardButton(text="🌐 Language / Язык", callback_data="language:menu:interface")],
         ]
     )
     await message.answer(
-        "Отправьте аудио, голосовое сообщение или ссылку на YouTube. Конспект появится в вашем личном профиле.",
+        body + "\n\n/language",
         reply_markup=keyboard,
     )
+
+
+async def send_legal_prompt(message: Message, stage: str, domain: str):
+    if stage == "deleting":
+        await message.answer(
+            "Данные аккаунта удаляются. До завершения новые записи недоступны. "
+            "Если подтверждение не придёт в течение суток, повторите /start."
+        )
+        return
+    if stage == "terms":
+        title = "Перед началом прочитайте пользовательское соглашение и политику обработки данных."
+        links = [
+            [
+                InlineKeyboardButton(text="Соглашение", url=public_url(domain, "terms")),
+                InlineKeyboardButton(text="Политика", url=public_url(domain, "privacy")),
+            ]
+        ]
+        accept = "Принимаю соглашение"
+    else:
+        title = "Отдельно ознакомьтесь с согласием на обработку персональных данных."
+        links = [
+            [InlineKeyboardButton(text="Прочитать согласие", url=public_url(domain, "consent"))]
+        ]
+        accept = "Даю согласие"
+    links.append(
+        [
+            InlineKeyboardButton(
+                text=accept,
+                callback_data=f"legal:{stage}:yes:{document_version(stage)[:16]}",
+            ),
+            InlineKeyboardButton(
+                text="Не согласен",
+                callback_data=f"legal:{stage}:no:{document_version(stage)[:16]}",
+            ),
+        ]
+    )
+    await message.answer(
+        f"{title}\n\nБез принятия документов бот не принимает записи. Отказ не удаляет историю: для отзыва и удаления используйте /revoke.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=links),
+    )
+
+
+@router.callback_query(F.data.startswith("legal:"))
+async def handle_legal_choice(query: CallbackQuery, bot: Bot, repository: Repository):
+    parts = (query.data or "").split(":")
+    if len(parts) != 4 or parts[1] not in {"terms", "consent"} or parts[2] not in {"yes", "no"}:
+        await query.answer("Недопустимый выбор.", show_alert=True)
+        return
+    user_id = str(query.from_user.id)
+    if (
+        not query.message
+        or query.message.chat.type != "private"
+        or query.message.chat.id != query.from_user.id
+    ):
+        await query.answer("Откройте условия в личном чате через /start.", show_alert=True)
+        return
+    if not repository.settings.legal_enforcement:
+        await query.answer("Условия сейчас обновляются. Введите /start.", show_alert=True)
+        return
+    if parts[3] != document_version(parts[1])[:16]:
+        await query.answer(
+            "Документы обновились. Введите /start и ознакомьтесь с ними снова.", show_alert=True
+        )
+        return
+    if parts[2] == "no":
+        await query.answer("Вы отказались.")
+        await bot.send_message(
+            query.from_user.id,
+            "Новая редакция не принята, обработка по ней не начнётся. Чтобы отозвать ранее данное согласие и удалить историю, отправьте /revoke. Чтобы прочитать условия снова — /start.",
+        )
+        return
+    stage = await asyncio.to_thread(repository.legal_stage, user_id)
+    if stage != parts[1]:
+        await query.answer("Откройте актуальные условия через /start.", show_alert=True)
+        return
+    try:
+        await asyncio.to_thread(repository.accept_legal, user_id, stage, parts[3])
+    except (ProcessingCancelled, ValueError):
+        await query.answer("Состояние изменилось. Отправьте /start.", show_alert=True)
+        return
+    await query.answer("Сохранено.")
+    if stage == "terms":
+        await send_legal_prompt(query.message, "consent", repository.settings.domain)
+    else:
+        await send_welcome(query.message, repository.settings.domain,
+                           await ensure_interface_language(repository, query.from_user))
 
 
 @router.message(Command("admin"))
@@ -79,8 +318,14 @@ async def enqueue(message: Message, repository: Repository, payload: dict):
     if not message.from_user or message.chat.type != "private":
         await message.answer("Обработка доступна в личном чате с ботом.")
         return
-    status = await message.answer("⏳ Запись добавляется в очередь…")
+    stage = await asyncio.to_thread(repository.legal_stage, str(message.from_user.id))
+    if stage == "deleting" or (repository.settings.legal_enforcement and stage != "ready"):
+        await send_legal_prompt(message, stage, repository.settings.domain)
+        return
+    locale = interface_language(repository, message.from_user)
+    status = await message.answer("⏳ " + bot_copy(locale, 0))
     payload.update(chat_id=message.chat.id, status_id=status.message_id)
+    payload["output_language"] = locale
     try:
         created = await asyncio.to_thread(
             repository.enqueue,
@@ -91,13 +336,16 @@ async def enqueue(message: Message, repository: Repository, payload: dict):
         )
     except QueueFull:
         await status.edit_text(
-            "Очередь заполнена. Дождитесь обработки предыдущих записей и повторите отправку."
+            bot_copy(locale, 3)
         )
         return
+    except ProcessingCancelled:
+        await status.edit_text("Данные аккаунта удаляются. Запись не принята.")
+        return
     await status.edit_text(
-        "⏳ Запись в очереди. Сообщу, когда конспект будет готов."
+        "⏳ " + bot_copy(locale, 1)
         if created
-        else "Эта запись уже принята в обработку."
+        else bot_copy(locale, 2)
     )
 
 
@@ -120,7 +368,11 @@ async def handle_audio(message: Message, repository: Repository):
             f"Размер файла должен быть не более {get_settings().max_upload_bytes // (1024 * 1024)} МБ."
         )
         return
-    await enqueue(message, repository, {"kind": "audio", "file_id": media.file_id})
+    await enqueue(
+        message,
+        repository,
+        {"kind": "audio", "file_id": media.file_id, "file_name": getattr(media, "file_name", None)},
+    )
 
 
 @router.message(F.text)
@@ -140,10 +392,14 @@ async def handle_youtube_link(message: Message, repository: Repository):
 
 @router.callback_query(F.data.startswith("dl_"))
 async def handle_download_docx(query: CallbackQuery, bot: Bot, repository: Repository):
+    stage = await asyncio.to_thread(repository.legal_stage, str(query.from_user.id))
+    if stage == "deleting" or (repository.settings.legal_enforcement and stage != "ready"):
+        await query.answer("Доступ недоступен. Проверьте состояние через /start.", show_alert=True)
+        return
     parts = (query.data or "")[3:].split("_", 1)
     lang, lecture_id = (
         (parts[0], parts[1])
-        if len(parts) == 2 and parts[0] in {"ru", "en"}
+        if len(parts) == 2 and parts[0] in {*LANGUAGES, "orig"}
         else ("ru", (query.data or "")[3:])
     )
     lecture = (

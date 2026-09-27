@@ -68,16 +68,20 @@ function applyTheme(theme, notify = false, isUserAction = false) {
   if (finalTheme === 'light') {
     if (sunIcon) sunIcon.style.display = 'none';
     if (moonIcon) moonIcon.style.display = 'block';
-    if (window.Telegram?.WebApp?.setHeaderColor) window.Telegram.WebApp.setHeaderColor('#f4f5ee');
-    if (window.Telegram?.WebApp?.setBackgroundColor) window.Telegram.WebApp.setBackgroundColor('#f4f5ee');
   } else {
     if (sunIcon) sunIcon.style.display = 'block';
     if (moonIcon) moonIcon.style.display = 'none';
-    if (window.Telegram?.WebApp?.setHeaderColor) window.Telegram.WebApp.setHeaderColor('#10110f');
-    if (window.Telegram?.WebApp?.setBackgroundColor) window.Telegram.WebApp.setBackgroundColor('#10110f');
   }
 
+  syncTelegramColors();
   if (notify && typeof triggerHaptic !== 'undefined') triggerHaptic('impact', 'medium');
+}
+
+function syncTelegramColors() {
+  const background = getComputedStyle(document.body).getPropertyValue('--bg').trim();
+  const app = window.Telegram?.WebApp;
+  try { app?.setHeaderColor?.(background); } catch (_) {}
+  try { app?.setBackgroundColor?.(background); } catch (_) {}
 }
 
 function setupThemeToggle() {
@@ -130,11 +134,15 @@ function setupThemeToggle() {
 
 // === Accent Color Management ===
 function initAccentTheme() {
-  const savedAccent = themeStorage.getItem('slovech_accent') || 'lavender';
+  const migrated = themeStorage.getItem('slovech_accent_default_v2') === '1';
+  const savedAccent = migrated ? (themeStorage.getItem('slovech_accent') || 'burgundy') : 'burgundy';
+  themeStorage.setItem('slovech_accent_default_v2', '1');
   applyAccent(savedAccent, false);
 }
 
 function applyAccent(colorName, notify = true) {
+  if (!['burgundy', 'lavender', 'sage', 'sky', 'peach', 'rose'].includes(colorName)) colorName = 'burgundy';
+  document.documentElement.setAttribute('data-accent', colorName);
   document.body.setAttribute('data-accent', colorName);
   themeStorage.setItem('slovech_accent', colorName);
 
@@ -142,8 +150,10 @@ function applyAccent(colorName, notify = true) {
   if (colorDots) {
     colorDots.forEach(d => {
       d.classList.toggle('active', d.getAttribute('data-color') === colorName);
+      d.setAttribute('aria-pressed', String(d.getAttribute('data-color') === colorName));
     });
   }
+  syncTelegramColors();
   if (notify && typeof triggerHaptic !== 'undefined') triggerHaptic('impact', 'medium');
 }
 

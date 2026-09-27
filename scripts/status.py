@@ -13,7 +13,8 @@ if __name__ == "__main__":
     with repo.connection() as db:
         counts = dict(db.execute("SELECT state,COUNT(*) FROM jobs GROUP BY state").fetchall())
         oldest = db.execute("SELECT MIN(created) FROM jobs WHERE state='pending'").fetchone()[0]
-    stamp = settings.data_dir / "slovech.worker.heartbeat"
+        deletions = db.execute("SELECT COUNT(*),MIN(requested_at) FROM deletion_requests").fetchone()
+    stamp = settings.data_dir / "worker.heartbeat"
     heartbeat_age = time.time() - float(stamp.read_text()) if stamp.exists() else None
     print(
         json.dumps(
@@ -22,6 +23,8 @@ if __name__ == "__main__":
                 "oldest_pending_seconds": int(time.time() - oldest) if oldest else 0,
                 "worker_heartbeat_age_seconds": heartbeat_age,
                 "free_disk_bytes": shutil.disk_usage(settings.data_dir).free,
+                "pending_deletions": deletions[0],
+                "oldest_deletion_seconds": int(time.time()-deletions[1]) if deletions[1] else 0,
             }
         )
     )

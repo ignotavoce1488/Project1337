@@ -72,11 +72,12 @@ async def download_youtube_audio(url: str, output_path: str) -> None:
     )
 
 
-async def fetch_youtube_transcript(video_id: str) -> str | None:
+async def fetch_youtube_transcript(video_id: str, language_hint: str | None = None) -> str | None:
     if not VIDEO_ID.fullmatch(video_id):
         raise ValueError("Invalid video ID")
     try:
-        output = await run_process(sys.executable, "-m", "core.youtube", video_id, timeout=40)
+        output = await run_process(sys.executable, "-m", "slovech.core.youtube", video_id,
+                                   language_hint or "", timeout=40)
         text = output.decode().strip()
         return text if text and len(text) <= 2000000 else None
     except (RuntimeError, TimeoutError):
@@ -89,6 +90,10 @@ if __name__ == "__main__":
     video = sys.argv[1]
     if not VIDEO_ID.fullmatch(video):
         raise SystemExit(1)
-    transcript = YouTubeTranscriptApi().fetch(video, languages=["ru", "en"])
-    prefix = "[LANG:EN]" if transcript.language_code.startswith("en") else "[LANG:RU]"
+    from slovech.core.languages import LANGUAGES, normalize_language
+
+    requested = normalize_language(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2] else None
+    order = ([requested] if requested else []) + [code for code in LANGUAGES if code != requested]
+    transcript = YouTubeTranscriptApi().fetch(video, languages=order)
+    prefix = f"[LANG:{normalize_language(transcript.language_code).upper()}]"
     print(prefix + "\n" + " ".join(item.text for item in transcript))

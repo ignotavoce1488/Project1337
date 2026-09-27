@@ -55,7 +55,10 @@ async function fetchHistory() {
   for (let offset = 0; ; offset += 100) {
     const response = await apiFetch(`/api/lectures?limit=100&offset=${offset}`);
     if (!response.ok) throw new Error(response.status === 401
-      ? 'Откройте приложение заново через Telegram' : 'Не удалось загрузить историю');
+      ? 'Откройте приложение заново через Telegram'
+      : response.status === 403
+        ? 'Доступ приостановлен. Проверьте условия или статус удаления в боте через /start'
+        : 'Не удалось загрузить историю');
     const page = await response.json();
     result.push(...page);
     if (page.length < 100) return result;

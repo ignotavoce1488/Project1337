@@ -18,12 +18,17 @@ services:
     cpus: 0.5
     networks: [app]
   api:
+    image: slovech:${APP_VERSION:-long-summary-20260927}
+    environment:
+      LEGAL_ENFORCEMENT: 'false'
     ports: ['127.0.0.1:18000:8000']
     command: [uvicorn, 'slovech.server:app', --host, 0.0.0.0, --port, '8000', --workers, '1', --proxy-headers, --forwarded-allow-ips, '172.30.80.1', --no-access-log]
     mem_limit: 192m
     cpus: 0.5
   bot:
+    image: slovech:${APP_VERSION:-long-summary-20260927}
     environment:
+      LEGAL_ENFORCEMENT: 'false'
       TELEGRAM_API_URL: http://telegram-bot-api:8081
     mem_limit: 160m
     cpus: 0.3
@@ -31,14 +36,16 @@ services:
       telegram-bot-api:
         condition: service_started
   worker:
+    image: slovech:${APP_VERSION:-long-summary-20260927}
     # The VPS uses a local systemd-resolved stub backed by GeoHide Smart DNS.
     dns: ['172.30.80.1']
     # Match the local Telegram API file owner; retain app storage group.
     user: '101:10001'
     environment:
+      LEGAL_ENFORCEMENT: 'false'
       TELEGRAM_API_URL: http://telegram-bot-api:8081
       TELEGRAM_LOCAL_FILE_ROOT: /var/lib/telegram-bot-api
-      OPENROUTER_MODELS: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free,liquid/lfm-2.5-2.6b:free
+      OPENROUTER_MODELS: nvidia/nemotron-3-ultra-550b-a55b:free,nvidia/nemotron-3.5-lightning:free
     volumes:
       - telegram_bot_api:/var/lib/telegram-bot-api
     mem_limit: 320m

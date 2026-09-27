@@ -18,6 +18,70 @@ async function prepare(page, authenticated = true) {
   }, {initData: authenticated ? signed() : ''});
 }
 
+test('Mini App follows the language selected in the bot', async ({page}) => {
+  await prepare(page);
+  await page.route('**/api/preferences', async route => {
+    await route.fulfill({json: {interface_language: 'ar'}});
+  });
+  await page.goto('/app');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ar');
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await expect(page.locator('[data-i18n="1"]')).toHaveText('كل الملخصات');
+  await expect(page.locator('[data-i18n="7"]')).toHaveText('التفريغ');
+});
+
+test('selected language is primary and swap shows the original', async ({page}) => {
+  await prepare(page);
+  await page.route('**/api/preferences', route => route.fulfill({json: {interface_language: 'es'}}));
+  await page.route('**/api/lecture/latest', async route => {
+    const response = await route.fetch();
+    const lecture = await response.json();
+    Object.assign(lecture, {
+      language: 'en', title: 'Original title', summary: '## Original notes', key_points: ['Original point'],
+      translation_language: 'es', title_translated: 'Título traducido',
+      summary_translated: '## Notas traducidas', key_points_translated: ['Punto traducido'],
+    });
+    await route.fulfill({response, json: lecture});
+  });
+  await page.goto('/app');
+  await expect(page.locator('#lectureTitle')).toHaveText('Título traducido');
+  await expect(page.locator('#summaryBox')).toContainText('Notas traducidas');
+  await page.locator('#langToggleBtn').click();
+  await expect(page.locator('#lectureTitle')).toHaveText('Original title');
+  await expect(page.locator('#summaryBox')).toContainText('Original notes');
+  await page.locator('#langToggleBtn').click();
+  await expect(page.locator('#lectureTitle')).toHaveText('Título traducido');
+});
+
+test('old recording can be translated from the Mini App', async ({page}) => {
+  await prepare(page);
+  await page.route('**/api/preferences', route => route.fulfill({json: {interface_language: 'es'}}));
+  await page.route('**/api/lecture/lecture100/translation', route => route.fulfill({
+    json: {state: route.request().method() === 'POST' ? 'pending' : 'ready', language: 'es'}
+  }));
+  await page.route('**/api/lecture/lecture100', async route => {
+    const response = await route.fetch();
+    const lecture = await response.json();
+    Object.assign(lecture, {translation_language: 'es', title_translated: 'Clase cien',
+      summary_translated: '## Resumen en español', key_points_translated: ['Idea principal']});
+    await route.fulfill({response, json: lecture});
+  });
+  await page.goto('/app');
+  await expect(page.locator('#translateBtn')).toBeVisible();
+  await page.locator('#translateBtn').click();
+  await expect(page.locator('#lectureTitle')).toHaveText('Clase cien');
+  await expect(page.locator('#langToggleBtn')).toBeVisible();
+});
+
+test('history search includes transcript text', async ({page}) => {
+  await prepare(page);
+  await page.goto('/app');
+  await page.locator('#openHistoryBtn').click();
+  await page.locator('#historySearchInput').fill('world');
+  await expect(page.locator('.history-card')).toHaveCount(50);
+  await expect(page.locator('.history-card-preview').first()).toContainText('Hello world');
+});
+
 test('authorization, translated lecture, history pagination, keyboard navigation', async ({page}) => {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -43,6 +107,37 @@ test('authorization, translated lecture, history pagination, keyboard navigation
   await page.waitForTimeout(300);
   await page.screenshot({path:'test-results/mini-app-mobile.png', fullPage:true});
   expect(errors).toEqual([]);
+});
+
+test('long takeaway lists stay compact until expanded and reset for another lecture', async ({page}) => {
+  await prepare(page);
+  await page.route('**/api/lecture/latest', async route => {
+    const response = await route.fetch();
+    const lecture = await response.json();
+    lecture.key_points_ru = Array.from({length: 8}, (_, index) => `Подробный тезис ${index + 1}`);
+    lecture.key_points = Array.from({length: 8}, (_, index) => `Detailed point ${index + 1}`);
+    await route.fulfill({response, json: lecture});
+  });
+  await page.goto('/app');
+  await expect(page.locator('.takeaway-card')).toHaveCount(3);
+  await expect(page.locator('#takeawaysMoreBtn')).toHaveText('Показать ещё 5');
+  await expect(page.locator('#takeawaysMoreBtn')).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('#summaryBox')).toContainText('Русский текст');
+
+  await page.locator('#takeawaysMoreBtn').click();
+  await expect(page.locator('.takeaway-card')).toHaveCount(8);
+  await expect(page.locator('#takeawaysMoreBtn')).toHaveText('Свернуть');
+  await expect(page.locator('#takeawaysMoreBtn')).toHaveAttribute('aria-expanded', 'true');
+  await page.locator('#langToggleBtn').click();
+  await expect(page.locator('.takeaway-card')).toHaveCount(8);
+  await expect(page.locator('.takeaway-card').first()).toContainText('Detailed point 1');
+  await page.locator('#takeawaysMoreBtn').click();
+  await expect(page.locator('.takeaway-card')).toHaveCount(3);
+
+  await page.locator('#openHistoryBtn').click();
+  await page.locator('.history-card[data-id="lecture0"]').click();
+  await expect(page.locator('#takeawaysMoreBtn')).toBeHidden();
+  await expect(page.locator('.takeaway-card')).toHaveCount(1);
 });
 
 test('unauthenticated session receives usable error state', async ({page}) => {
@@ -91,14 +186,55 @@ test('transcript search treats special characters as text and resets on lecture 
   await expect(page.locator('#clearSearchBtn')).toBeHidden();
 });
 
+test('mini app prefers formatted transcript and escapes its content', async ({page}) => {
+  await prepare(page);
+  await page.route('**/api/lecture/latest', async route => {
+    const response = await route.fetch();
+    const lecture = await response.json();
+    lecture.transcription = 'Сырой текст без абзацев';
+    lecture.formatted_transcription = 'Первый <абзац>.\n\nВторой абзац.';
+    await route.fulfill({response, json: lecture});
+  });
+  await page.goto('/app');
+  await page.locator('[data-tab="transcript"]').click();
+  await expect(page.locator('#transcriptBox .transcript-block')).toHaveCount(2);
+  await expect(page.locator('#transcriptBox')).toContainText('Первый <абзац>.');
+  await expect(page.locator('#transcriptBox')).not.toContainText('Сырой текст');
+  await expect(page.locator('#transcriptBox').locator('абзац')).toHaveCount(0);
+  await page.locator('#transcriptSearch').fill('<абзац>');
+  await expect(page.locator('#transcriptBox .word-highlight')).toHaveText('<абзац>');
+});
+
+test('unformatted long transcript is split into readable paragraphs without losing words', async ({page}) => {
+  await prepare(page);
+  const raw = Array.from({length: 160}, (_, index) => `слово${index}`).join(' ');
+  await page.route('**/api/lecture/latest', async route => {
+    const response = await route.fetch();
+    const lecture = await response.json();
+    lecture.transcription = raw;
+    lecture.formatted_transcription = null;
+    await route.fulfill({response, json: lecture});
+  });
+  await page.goto('/app');
+  await page.locator('[data-tab="transcript"]').click();
+  const paragraphs = page.locator('#transcriptBox .transcript-block');
+  expect(await paragraphs.count()).toBeGreaterThan(1);
+  const chunks = await paragraphs.allTextContents();
+  expect(chunks.every(chunk => chunk.length <= 360)).toBe(true);
+  expect(chunks.join(' ')).toBe(raw);
+  await page.screenshot({path: 'test-results/mini-app-transcript-paragraphs.png', fullPage: true});
+  await page.locator('#transcriptSearch').fill('слово80');
+  await expect(page.locator('#transcriptBox .word-highlight')).toHaveText('слово80');
+});
+
 test('history navigation retains Telegram auth fallback and app version', async ({page}) => {
   await prepare(page, false);
-  await page.goto(`/app?v=10#tgWebAppData=${encodeURIComponent(signed())}`);
+  await page.goto(`/app?v=13#tgWebAppData=${encodeURIComponent(signed())}`);
   await expect(page.locator('#lectureTitle')).toHaveText('Лекция 100');
   await page.locator('#openHistoryBtn').click();
   await page.locator('.history-card[data-id="lecture0"]').click();
   await expect(page.locator('#lectureTitle')).toHaveText('Лекция 0');
-  await expect(page).toHaveURL(/\?v=10&id=lecture0#tgWebAppData=/);
+  await expect(page).toHaveURL(/\?v=13&id=lecture0#tgWebAppData=/);
   await page.reload();
   await expect(page.locator('#lectureTitle')).toHaveText('Лекция 0');
 });
@@ -111,7 +247,7 @@ test('long Russian title fits mobile card and logo letter is optically centered'
     lecture.title_ru = 'Разбор конфликта Александра Фреймтеймера с творческим объединением «Хозяева»';
     await route.fulfill({response, json: lecture});
   });
-  await page.goto('/app?v=10');
+  await page.goto('/app?v=13');
   await expect(page.locator('#lectureTitle')).toContainText('Разбор конфликта');
   const titleSize = await page.locator('#lectureTitle').evaluate(el => getComputedStyle(el).fontSize);
   expect(titleSize).toBe('26px');
@@ -127,7 +263,7 @@ test('long Russian title fits mobile card and logo letter is optically centered'
 
 test('history drawer contains backdrop gestures and restores the page after closing', async ({page}) => {
   await prepare(page);
-  await page.goto('/app?v=10');
+  await page.goto('/app?v=13');
   await page.evaluate(() => window.scrollTo(0, 300));
   const initialScroll = await page.evaluate(() => window.scrollY);
 

@@ -29,7 +29,13 @@
           }
         }
         document.documentElement.setAttribute('data-theme', theme);
-        var accent = localStorage.getItem('slovech_accent') || 'lavender';
+        var accent = localStorage.getItem('slovech_accent') || 'burgundy';
+        if (localStorage.getItem('slovech_accent_default_v2') !== '1') {
+          accent = 'burgundy';
+          localStorage.setItem('slovech_accent', accent);
+          localStorage.setItem('slovech_accent_default_v2', '1');
+        }
+        if (['burgundy', 'lavender', 'sage', 'sky', 'peach', 'rose'].indexOf(accent) === -1) accent = 'burgundy';
         document.documentElement.setAttribute('data-accent', accent);
       } catch (err) {}
     })();

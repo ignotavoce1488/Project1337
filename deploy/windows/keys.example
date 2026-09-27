@@ -1,6 +1,6 @@
 # Use a separate TEST bot from @BotFather, not the running production bot.
 BOT_TOKEN=
-GEMINI_API_KEYS=
+AITUNNEL_API_KEY=
 # Required: final summaries are generated only through OpenRouter.
 OPENROUTER_API_KEY=
 OPENROUTER_MODELS=nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free,liquid/lfm-2.5-2.6b:free

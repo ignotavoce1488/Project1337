@@ -14,7 +14,7 @@ slovech/          Python-приложение
   api/            HTTP-маршруты
   bot_handlers/   Обработчики Telegram
   core/           Настройки, модели, хранилище, авторизация и обработка медиа
-  ai/             Gemini и OpenRouter
+  ai/             AITUNNEL Whisper и OpenRouter
 web/              Mini App: HTML, CSS и JavaScript без сборки
 tests/            Python, JavaScript и браузерные тесты
 scripts/          Резервные копии, миграция, диагностика и сборка релиза
@@ -31,7 +31,7 @@ docs/             Эксплуатационная документация
 
 Для полного теста на Windows 11 без VPS: распакуйте `Slovech-Windows.zip` и запустите
 `START-WINDOWS.cmd`. Бот, Mini App, AI-обработка и HTTPS-туннель работают в Docker.
-При первом запуске нужны токен тестового бота и Gemini API key.
+При первом запуске нужны токен тестового бота и AITUNNEL API key.
 [Инструкция Windows](docs/windows-local.md).
 
 Нужны Python 3.12, uv, Node.js/npm; для обработки аудио — FFmpeg и ffprobe.
@@ -42,7 +42,7 @@ cp .env.example .env
 make api
 ```
 
-В `.env` укажите `BOT_TOKEN` и `GEMINI_API_KEYS`. В отдельных терминалах:
+В `.env` укажите `BOT_TOKEN`, `AITUNNEL_API_KEY` и `OPENROUTER_API_KEY`. В отдельных терминалах:
 
 ```sh
 make bot

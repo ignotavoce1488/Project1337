@@ -44,3 +44,10 @@ def test_log_formatter_redacts_configured_credentials():
         "test", logging.ERROR, __file__, 1, "Failed URL?key=%s", ("secret",), None
     )
     assert "secret" not in JsonFormatter(["secret"]).format(record)
+
+
+def test_bot_does_not_require_worker_ai_keys():
+    settings = Settings(_env_file=None, bot_token="test-token")
+    settings.validate_bot()
+    with pytest.raises(ValueError, match="AITUNNEL_API_KEY"):
+        settings.validate_worker()

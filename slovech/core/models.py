@@ -1,5 +1,3 @@
-from typing import Literal
-
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -10,6 +8,10 @@ class Summary(BaseModel):
     title_ru: str | None = Field(None, max_length=500)
     summary_ru: str | None = Field(None, max_length=200000)
     key_points_ru: list[str] | None = Field(None, max_length=100)
+    translation_language: str | None = Field(None, pattern=r"^[a-z]{2}$")
+    title_translated: str | None = Field(None, max_length=500)
+    summary_translated: str | None = Field(None, max_length=200000)
+    key_points_translated: list[str] | None = Field(None, max_length=100)
 
 
 class Lecture(Summary):
@@ -17,7 +19,8 @@ class Lecture(Summary):
     user_id: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
     created_at: str
     transcription: str = Field(max_length=2000000)
-    language: Literal["ru", "en"] = "ru"
+    formatted_transcription: str | None = Field(None, max_length=2000000)
+    language: str = Field(default="ru", pattern=r"^(auto|[a-z]{2})$")
     audio_url: str | None = None
 
     @field_validator("user_id", mode="before")

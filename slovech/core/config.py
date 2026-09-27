@@ -30,8 +30,10 @@ class Settings(BaseSettings):
     telegram_local_file_root: Path | None = None
     storage_group_writable: bool = False
     gemini_api_keys: SecretStr = SecretStr("")
+    aitunnel_api_key: SecretStr = SecretStr("")
     openrouter_api_key: SecretStr = SecretStr("")
     openrouter_models: str = ""
+    legal_enforcement: bool = False
     youtube_proxy: str = ""
     auth_max_age: int = 3600
     max_upload_bytes: int = 300 * 1024 * 1024
@@ -85,9 +87,14 @@ class Settings(BaseSettings):
         self.data_dir.mkdir(parents=True, exist_ok=True, mode=mode)
         self.audio_dir.mkdir(parents=True, exist_ok=True, mode=mode)
 
+    def validate_bot(self):
+        if not self.bot_token.get_secret_value():
+            raise ValueError("Bot requires BOT_TOKEN")
+
     def validate_worker(self):
-        if not self.bot_token.get_secret_value() or not self.gemini_api_keys.get_secret_value():
-            raise ValueError("Bot/worker requires BOT_TOKEN and GEMINI_API_KEYS")
+        self.validate_bot()
+        if not self.aitunnel_api_key.get_secret_value():
+            raise ValueError("Worker requires AITUNNEL_API_KEY")
         if not self.openrouter_api_key.get_secret_value() or not self.openrouter_models.strip():
             raise ValueError("Worker requires OPENROUTER_API_KEY and OPENROUTER_MODELS")
 

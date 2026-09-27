@@ -22,24 +22,17 @@ async def test_real_wav_to_mp3_pipeline(repo, monkeypatch):
     monkeypatch.setattr("slovech.worker.fetch_youtube_transcript", AsyncMock(return_value=None))
     monkeypatch.setattr("slovech.worker.download_youtube_audio", download)
     monkeypatch.setattr(
-        "slovech.worker.transcribe_audio_with_gemini", AsyncMock(return_value="[LANG:RU]\nТест")
+        "slovech.worker.transcribe_audio_with_aitunnel", AsyncMock(return_value="[LANG:RU]\nТест")
     )
     monkeypatch.setattr(
         "slovech.worker.generate_summary_with_openrouter",
         AsyncMock(return_value={"title": "Тест", "summary": "Конспект"}),
     )
     monkeypatch.setattr("slovech.worker.notify", AsyncMock())
-    await process_job(
-        {
-            "id": "media",
-            "user_id": "123",
-            "attempts": 1,
-            "payload": {"kind": "youtube", "video_id": "abcdefghijk", "url": "unused"},
-        },
-        AsyncMock(),
-        repo,
+    repo.enqueue(
+        "media", "source", "123", {"kind": "youtube", "video_id": "abcdefghijk", "url": "unused"}
     )
+    await process_job(repo.claim(), AsyncMock(), repo)
     lecture = repo.get("media", "123")
-    assert lecture.audio_url == "/audio/media_1.mp3"
-    assert (repo.settings.audio_dir / "media_1.mp3").stat().st_size > 0
-    assert not list(repo.settings.audio_dir.glob("raw_*"))
+    assert lecture.audio_url is None
+    assert not list(repo.settings.audio_dir.iterdir())

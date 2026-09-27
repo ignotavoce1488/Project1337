@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-accent="burgundy">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,600&display=swap" rel="stylesheet">
-  <script src="/static/js/bootstrap.js?v=10"></script>
-  <link rel="stylesheet" href="/static/style.css?v=10">
+  <script src="/static/js/bootstrap.js?v=14"></script>
+  <link rel="stylesheet" href="/static/style.css?v=14">
 </head>
 <body>
   <div class="app-container">
@@ -18,7 +18,7 @@
         <span class="brand-icon" aria-hidden="true"><span class="brand-letter">К</span></span>
         <span class="brand-copy">
           <span class="brand-name">Конспектъ</span>
-          <span class="brand-caption">Умные заметки</span>
+          <span class="brand-caption" data-i18n="0">Умные заметки</span>
         </span>
       </div>
 
@@ -29,7 +29,7 @@
             <path d="M6 6h10"></path>
             <path d="M6 10h10"></path>
           </svg>
-          <span class="btn-text">Все записи</span>
+          <span class="btn-text" data-i18n="1">Все записи</span>
           <span class="history-count-badge" id="historyBadge" style="display: none;">0</span>
         </button>
 
@@ -58,7 +58,8 @@
           <div class="palette-dropdown" id="paletteDropdown">
             <div class="palette-label">Акцент</div>
             <div class="palette-colors">
-              <button class="color-dot active" data-color="lavender" title="Лайм" style="--c: #c8ee74;"></button>
+              <button class="color-dot active" data-color="burgundy" title="Красный — Конспектъ" style="--c: #a32c22;"></button>
+              <button class="color-dot" data-color="lavender" title="Лайм" style="--c: #c8ee74;"></button>
               <button class="color-dot" data-color="sage" title="Мята" style="--c: #77dfae;"></button>
               <button class="color-dot" data-color="sky" title="Небо" style="--c: #79d6f4;"></button>
               <button class="color-dot" data-color="peach" title="Персик" style="--c: #ffbd7a;"></button>
@@ -71,15 +72,15 @@
 
     <div class="empty-state glass-card" id="emptyState" style="display: none;">
       <div class="empty-icon" aria-hidden="true">✦</div>
-      <h2>Здесь появятся ваши конспекты</h2>
-      <p>Отправьте любое аудио или голосовое сообщение боту <b>@slovech_bot</b>, и после обработки здесь появится структурированный конспект с аудиозаписью.</p>
+      <h2 data-i18n="2">Здесь появятся ваши конспекты</h2>
+      <p data-i18n="3">Отправьте аудио или голосовое сообщение боту @slovech_bot. Конспект появится здесь.</p>
     </div>
 
     <div id="lectureView">
       <div class="lecture-hero glass-card">
         <div class="meta-row">
           <span class="meta-pill date-pill" id="dateBadge">Загрузка...</span>
-          <span class="meta-pill status-pill" id="statusPill">Последний конспект</span>
+          <span class="meta-pill status-pill" id="statusPill" data-i18n="4">Последний конспект</span>
         </div>
         <h1 class="lecture-heading" id="lectureTitle">Загрузка...</h1>
       </div>
@@ -93,14 +94,17 @@
           </svg>
           <span id="langToggleText">Показать оригинал (EN)</span>
         </button>
+        <button class="action-btn glass-btn" id="translateBtn" type="button" style="display: none;">Перевести конспект</button>
+        <span id="translateStatus" class="translation-status" role="status"></span>
       </div>
 
       <section class="takeaways-section" id="takeawaysSection" style="display: none;">
         <div class="section-heading">
-          <span class="section-kicker">Коротко о главном</span>
+          <span class="section-kicker" data-i18n="5">Коротко о главном</span>
           <span class="section-rule"></span>
         </div>
         <div class="takeaways-grid" id="takeawaysList"></div>
+        <button class="takeaways-more" id="takeawaysMoreBtn" type="button" aria-controls="takeawaysList" aria-expanded="false" style="display: none;"></button>
       </section>
 
       <div class="tab-control glass-tabs">
@@ -111,7 +115,7 @@
             <line x1="16" y1="13" x2="8" y2="13"></line>
             <line x1="16" y1="17" x2="8" y2="17"></line>
           </svg>
-          <span>Конспект</span>
+          <span data-i18n="6">Конспект</span>
         </button>
         <button class="tab-item" data-tab="transcript">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -120,7 +124,7 @@
             <line x1="12" y1="19" x2="12" y2="23"></line>
             <line x1="8" y1="23" x2="16" y2="23"></line>
           </svg>
-          <span>Расшифровка</span>
+          <span data-i18n="7">Расшифровка</span>
         </button>
       </div>
 
@@ -136,7 +140,7 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
             </svg>
-            Скопировать конспект
+            <span data-i18n="8">Скопировать конспект</span>
           </button>
         </article>
 
@@ -146,7 +150,7 @@
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
-            <input type="text" id="transcriptSearch" aria-label="Поиск в расшифровке" placeholder="Поиск в тексте расшифровки...">
+            <input type="text" id="transcriptSearch" aria-label="Поиск в расшифровке" placeholder="Поиск в тексте расшифровки..." data-i18n-placeholder="10">
             <button class="clear-btn" id="clearSearchBtn" aria-label="Очистить поиск" style="display: none;">&times;</button>
           </div>
           <div class="paper-card glass-card transcript-render" id="transcriptBox">
@@ -159,7 +163,7 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
             </svg>
-            Скопировать расшифровку
+            <span data-i18n="9">Скопировать расшифровку</span>
           </button>
         </article>
       </main>
@@ -173,8 +177,8 @@
         <div class="drawer-drag-pill"></div>
         <div class="drawer-title-row">
           <div>
-            <span class="drawer-eyebrow">Библиотека</span>
-            <h3>Мои конспекты</h3>
+            <span class="drawer-eyebrow" data-i18n="11">Библиотека</span>
+            <h3 data-i18n="12">Мои конспекты</h3>
           </div>
           <button class="drawer-close-btn" id="historyCloseBtn" aria-label="Закрыть историю">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
@@ -187,7 +191,7 @@
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
-          <input type="text" id="historySearchInput" aria-label="Поиск конспектов" placeholder="Поиск по истории...">
+          <input type="text" id="historySearchInput" aria-label="Поиск конспектов" placeholder="Поиск по истории..." data-i18n-placeholder="13">
         </div>
       </div>
       <div class="drawer-list" id="historyList">
@@ -198,9 +202,10 @@
     </div>
   </div>
 
-  <script src="/static/js/api.js?v=10"></script>
-  <script src="/static/js/ui.js?v=10"></script>
-  <script src="/static/js/theme.js?v=10"></script>
-  <script src="/static/js/app.js?v=10"></script>
+  <script src="/static/js/api.js?v=13"></script>
+  <script src="/static/js/i18n.js?v=3"></script>
+  <script src="/static/js/ui.js?v=13"></script>
+  <script src="/static/js/theme.js?v=14"></script>
+  <script src="/static/js/app.js?v=16"></script>
 </body>
 </html>
