@@ -158,16 +158,33 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible { outli
 .translation-progress-labels { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
 .translation-elapsed { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 .translation-track { height: 5px; margin-top: 8px; overflow: hidden; border-radius: 999px; background: var(--accent-soft); }
-.translation-track-fill { display: block; width: 32%; height: 100%; border-radius: inherit; background: var(--accent-main); animation: translation-slide 1.5s ease-in-out infinite alternate; }
+.translation-track-fill { display: block; width: 32%; height: 100%; border-radius: inherit; background: var(--accent-main); transform-origin: center; animation: translation-glide 3.4s linear infinite; will-change: transform; }
 .translation-progress[data-state="failed"] .translation-track { display: none; }
 .translation-progress[data-state="failed"] #translateStatus { color: #d86b6b; }
-@keyframes translation-slide { from { transform: translateX(0); } to { transform: translateX(212%); } }
-html[dir="rtl"] .translation-track-fill { animation-name: translation-slide-rtl; }
-@keyframes translation-slide-rtl { from { transform: translateX(0); } to { transform: translateX(-212%); } }
-@media (prefers-reduced-motion: reduce) { .translation-track-fill { animation: none; } }
+@keyframes translation-glide {
+  0%, 6% { transform: translateX(0) scaleX(.82); animation-timing-function: cubic-bezier(.55, 0, .16, 1); }
+  40% { transform: translateX(212%) scaleX(1.12); animation-timing-function: ease-out; }
+  47% { transform: translateX(205%) scaleX(.86); }
+  50% { transform: translateX(212%) scaleX(.82); animation-timing-function: cubic-bezier(.55, 0, .16, 1); }
+  90% { transform: translateX(0) scaleX(1.12); animation-timing-function: ease-out; }
+  97% { transform: translateX(7%) scaleX(.86); }
+  100% { transform: translateX(0) scaleX(.82); }
+}
+html[dir="rtl"] .translation-track-fill { animation-name: translation-glide-rtl; }
+@keyframes translation-glide-rtl {
+  0%, 6% { transform: translateX(0) scaleX(.82); animation-timing-function: cubic-bezier(.55, 0, .16, 1); }
+  40% { transform: translateX(-212%) scaleX(1.12); animation-timing-function: ease-out; }
+  47% { transform: translateX(-205%) scaleX(.86); }
+  50% { transform: translateX(-212%) scaleX(.82); animation-timing-function: cubic-bezier(.55, 0, .16, 1); }
+  90% { transform: translateX(0) scaleX(1.12); animation-timing-function: ease-out; }
+  97% { transform: translateX(-7%) scaleX(.86); }
+  100% { transform: translateX(0) scaleX(.82); }
+}
+@media (prefers-reduced-motion: reduce) { .translation-track-fill { animation: none; will-change: auto; } }
 .transcript-translation-progress { margin: 12px 2px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); color: var(--text-dim); font-size: 12px; }
 .transcript-translation-progress[hidden], .transcript-translation-retry[hidden] { display: none; }
-.transcript-translation-progress .translation-track-fill[data-determinate="true"] { animation: none; transform: none; }
+.transcript-translation-progress .translation-track-fill[data-determinate="true"] { animation: none; transform: none; transition: width .85s cubic-bezier(.2, .7, .2, 1); will-change: auto; }
+@media (prefers-reduced-motion: reduce) { .transcript-translation-progress .translation-track-fill[data-determinate="true"] { transition: none; } }
 .transcript-translation-progress[data-state="failed"] .translation-track { display: none; }
 .transcript-translation-retry { margin-top: 8px; border: 0; background: transparent; color: var(--accent-main); font: inherit; font-weight: 750; cursor: pointer; }
 

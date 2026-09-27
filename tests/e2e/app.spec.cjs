@@ -152,7 +152,9 @@ test('translated notes also translate the transcript and keep the original', asy
   await page.locator('[data-tab="transcript"]').click();
   await expect(page.locator('#transcriptTranslationProgress')).toBeVisible();
   await expect(page.locator('#transcriptBox')).toContainText('Русская расшифровка');
+  await expect(page.locator('#transcriptTranslationFill')).toHaveCSS('animation-name', 'translation-glide');
   await expect(page.locator('#transcriptTranslationCount')).toHaveText('1/2 · 50%', {timeout: 7000});
+  await expect(page.locator('#transcriptTranslationFill')).toHaveCSS('transition-duration', '0.85s');
   ready = true;
   await expect(page.locator('#transcriptBox')).toContainText('Deutsches Transkript', {timeout: 7000});
   await expect(page.locator('#transcriptTranslationProgress')).toBeHidden();

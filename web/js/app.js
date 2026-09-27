@@ -180,8 +180,16 @@ function renderTranscriptTranslationProgress() {
   transcriptTranslationTrack.setAttribute('aria-valuetext', message);
   if (completed && task.total) {
     transcriptTranslationTrack.setAttribute('aria-valuenow', String(percent));
-    transcriptTranslationFill.dataset.determinate = 'true';
-    transcriptTranslationFill.style.width = `${percent}%`;
+    if (transcriptTranslationFill.dataset.determinate !== 'true') {
+      transcriptTranslationFill.dataset.determinate = 'true';
+      transcriptTranslationFill.style.width = '0%';
+      transcriptTranslationFill.getBoundingClientRect();
+      requestAnimationFrame(() => {
+        if (transcriptTranslationTask === task) transcriptTranslationFill.style.width = `${percent}%`;
+      });
+    } else {
+      transcriptTranslationFill.style.width = `${percent}%`;
+    }
   } else {
     transcriptTranslationTrack.removeAttribute('aria-valuenow');
     transcriptTranslationFill.dataset.determinate = 'false';
