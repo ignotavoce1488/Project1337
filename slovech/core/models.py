@@ -20,6 +20,8 @@ class Lecture(Summary):
     created_at: str
     transcription: str = Field(max_length=2000000)
     formatted_transcription: str | None = Field(None, max_length=2000000)
+    transcription_translated: str | None = Field(None, max_length=2000000)
+    transcription_translation_language: str | None = Field(None, pattern=r"^[a-z]{2}$")
     language: str = Field(default="ru", pattern=r"^(auto|[a-z]{2})$")
     audio_url: str | None = None
 

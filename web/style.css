@@ -165,6 +165,11 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible { outli
 html[dir="rtl"] .translation-track-fill { animation-name: translation-slide-rtl; }
 @keyframes translation-slide-rtl { from { transform: translateX(0); } to { transform: translateX(-212%); } }
 @media (prefers-reduced-motion: reduce) { .translation-track-fill { animation: none; } }
+.transcript-translation-progress { margin: 12px 2px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); color: var(--text-dim); font-size: 12px; }
+.transcript-translation-progress[hidden], .transcript-translation-retry[hidden] { display: none; }
+.transcript-translation-progress .translation-track-fill[data-determinate="true"] { animation: none; transform: none; }
+.transcript-translation-progress[data-state="failed"] .translation-track { display: none; }
+.transcript-translation-retry { margin-top: 8px; border: 0; background: transparent; color: var(--accent-main); font: inherit; font-weight: 750; cursor: pointer; }
 
 .takeaways-section { margin-top: 34px; }
 .section-heading { display: flex; align-items: center; gap: 14px; margin-bottom: 13px; }

@@ -71,6 +71,34 @@ async def test_translation_keeps_original_and_detects_source(monkeypatch, settin
     assert len(calls) == 2
 
 
+async def test_transcript_translation_uses_separate_model_request(monkeypatch, settings):
+    import json
+
+    from slovech.ai.services import translate_transcription_chunk_with_openrouter
+
+    settings.openrouter_api_key = SecretStr("test-key")
+    settings.openrouter_models = "nvidia/nemotron-test"
+    monkeypatch.setattr("slovech.ai.services.get_settings", lambda: settings)
+    requests = []
+
+    def respond(request):
+        payload = json.loads(request.content)
+        requests.append(payload)
+        return httpx.Response(200, json={"choices": [{"finish_reason": "stop",
+            "message": {"content": "Der Dozent erklärt die Quantenphysik."}}]})
+
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr("slovech.ai.services.httpx.AsyncClient",
+                    lambda **kwargs: original_client(transport=httpx.MockTransport(respond), **kwargs))
+    result = await translate_transcription_chunk_with_openrouter(
+        "Преподаватель объясняет квантовую физику.", "de"
+    )
+    assert result == "Der Dozent erklärt die Quantenphysik."
+    assert len(requests) == 1
+    assert requests[0]["max_tokens"] == 6144
+    assert requests[0]["messages"][1]["content"] == "Преподаватель объясняет квантовую физику."
+
+
 async def process_queued_job(job, bot, repo):
     repo.enqueue(job["id"], job["id"], job["user_id"], job["payload"])
     with repo.connection() as db:

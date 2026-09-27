@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,600&display=swap" rel="stylesheet">
   <script src="/static/js/bootstrap.js?v=14"></script>
-  <link rel="stylesheet" href="/static/style.css?v=15">
+  <link rel="stylesheet" href="/static/style.css?v=16">
 </head>
 <body>
   <div class="app-container">
@@ -161,6 +161,16 @@
             <input type="text" id="transcriptSearch" aria-label="Поиск в расшифровке" placeholder="Поиск в тексте расшифровки..." data-i18n-placeholder="10">
             <button class="clear-btn" id="clearSearchBtn" aria-label="Очистить поиск" style="display: none;">&times;</button>
           </div>
+          <div id="transcriptTranslationProgress" class="transcript-translation-progress" hidden>
+            <div class="translation-progress-labels">
+              <span id="transcriptTranslationStatus" role="status"></span>
+              <span id="transcriptTranslationCount" class="translation-elapsed"></span>
+            </div>
+            <div id="transcriptTranslationTrack" class="translation-track" role="progressbar" aria-valuetext="Переводится">
+              <span id="transcriptTranslationFill" class="translation-track-fill"></span>
+            </div>
+            <button id="retryTranscriptTranslation" class="transcript-translation-retry" type="button" hidden>Повторить перевод</button>
+          </div>
           <div class="paper-card glass-card transcript-render" id="transcriptBox">
             <div class="loading-state">
               <div class="soft-spinner"></div>
@@ -211,9 +221,9 @@
   </div>
 
   <script src="/static/js/api.js?v=13"></script>
-  <script src="/static/js/i18n.js?v=4"></script>
+  <script src="/static/js/i18n.js?v=5"></script>
   <script src="/static/js/ui.js?v=13"></script>
   <script src="/static/js/theme.js?v=14"></script>
-  <script src="/static/js/app.js?v=17"></script>
+  <script src="/static/js/app.js?v=18"></script>
 </body>
 </html>

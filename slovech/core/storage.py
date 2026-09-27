@@ -61,7 +61,11 @@ class Repository:
                     title, summary, transcription, translation,
                     tokenize='unicode61 remove_diacritics 2'
                 );
-                CREATE TRIGGER IF NOT EXISTS lecture_search_insert AFTER INSERT ON lectures BEGIN
+                BEGIN IMMEDIATE;
+                DROP TRIGGER IF EXISTS lecture_search_insert;
+                DROP TRIGGER IF EXISTS lecture_search_update;
+                DROP TRIGGER IF EXISTS lecture_search_delete;
+                CREATE TRIGGER lecture_search_insert AFTER INSERT ON lectures BEGIN
                     INSERT INTO lecture_search(lecture_id,user_id,title,summary,transcription,translation)
                     VALUES(new.id,new.user_id,
                         json_extract(new.payload,'$.title'),
@@ -71,10 +75,11 @@ class Repository:
                         coalesce(json_extract(new.payload,'$.summary_translated'),'') || ' ' ||
                         coalesce(json_extract(new.payload,'$.key_points_translated'),'') || ' ' ||
                         coalesce(json_extract(new.payload,'$.title_ru'),'') || ' ' ||
-                        coalesce(json_extract(new.payload,'$.summary_ru'),'')
+                        coalesce(json_extract(new.payload,'$.summary_ru'),'') || ' ' ||
+                        coalesce(json_extract(new.payload,'$.transcription_translated'),'')
                     );
                 END;
-                CREATE TRIGGER IF NOT EXISTS lecture_search_update AFTER UPDATE OF payload ON lectures BEGIN
+                CREATE TRIGGER lecture_search_update AFTER UPDATE OF payload ON lectures BEGIN
                     DELETE FROM lecture_search WHERE lecture_id=old.id;
                     INSERT INTO lecture_search(lecture_id,user_id,title,summary,transcription,translation)
                     VALUES(new.id,new.user_id,
@@ -85,12 +90,14 @@ class Repository:
                         coalesce(json_extract(new.payload,'$.summary_translated'),'') || ' ' ||
                         coalesce(json_extract(new.payload,'$.key_points_translated'),'') || ' ' ||
                         coalesce(json_extract(new.payload,'$.title_ru'),'') || ' ' ||
-                        coalesce(json_extract(new.payload,'$.summary_ru'),'')
+                        coalesce(json_extract(new.payload,'$.summary_ru'),'') || ' ' ||
+                        coalesce(json_extract(new.payload,'$.transcription_translated'),'')
                     );
                 END;
-                CREATE TRIGGER IF NOT EXISTS lecture_search_delete AFTER DELETE ON lectures BEGIN
+                CREATE TRIGGER lecture_search_delete AFTER DELETE ON lectures BEGIN
                     DELETE FROM lecture_search WHERE lecture_id=old.id;
                 END;
+                COMMIT;
                 CREATE TABLE IF NOT EXISTS jobs (
                     id TEXT PRIMARY KEY, source TEXT UNIQUE NOT NULL, user_id TEXT NOT NULL,
                     payload TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending',
@@ -167,7 +174,8 @@ class Repository:
                           coalesce(json_extract(l.payload,'$.summary_translated'),'') || ' ' ||
                           coalesce(json_extract(l.payload,'$.key_points_translated'),'') || ' ' ||
                           coalesce(json_extract(l.payload,'$.title_ru'),'') || ' ' ||
-                          coalesce(json_extract(l.payload,'$.summary_ru'),'')
+                          coalesce(json_extract(l.payload,'$.summary_ru'),'') || ' ' ||
+                          coalesce(json_extract(l.payload,'$.transcription_translated'),'')
                    FROM lectures l WHERE NOT EXISTS
                    (SELECT 1 FROM lecture_search s WHERE s.lecture_id=l.id)"""
             )
@@ -403,9 +411,15 @@ class Repository:
         with self.connection() as db:
             db.execute("BEGIN IMMEDIATE")
             self._require_not_deleting(db, lecture.user_id)
+            row = db.execute("SELECT payload FROM lectures WHERE id=? AND user_id=?",
+                             (lecture.id, lecture.user_id)).fetchone()
+            if not row:
+                return
+            current = Lecture.model_validate_json(row[0])
+            updated = current.model_copy(update={"formatted_transcription": lecture.formatted_transcription})
             db.execute(
                 "UPDATE lectures SET payload=? WHERE id=? AND user_id=?",
-                (lecture.model_dump_json(), lecture.id, lecture.user_id),
+                (updated.model_dump_json(), lecture.id, lecture.user_id),
             )
 
     def result_message_id(self, job_id: str) -> int | None:
@@ -590,6 +604,97 @@ class Repository:
                 updates.update(translation_language=None, title_translated=None,
                                summary_translated=None, key_points_translated=None)
             updated = Lecture.model_validate({**lecture.model_dump(), **updates})
+            db.execute("UPDATE lectures SET payload=? WHERE id=? AND user_id=?",
+                       (updated.model_dump_json(), lecture_id, job["user_id"]))
+
+    def transcript_translation_status(self, lecture_id: str, user_id: str, language: str) -> dict | None:
+        with self.connection() as db:
+            row = db.execute("SELECT payload FROM lectures WHERE id=? AND user_id=?",
+                             (lecture_id, user_id)).fetchone()
+            if not row:
+                return None
+            lecture = Lecture.model_validate_json(row[0])
+            if lecture.language == language or (
+                lecture.transcription_translation_language == language and lecture.transcription_translated
+            ):
+                return {"state": "ready", "completed": 0, "total": 0}
+            job = db.execute("SELECT id,state,payload FROM jobs WHERE source=? AND user_id=?",
+                             (f"transcript_translation:{lecture_id}:{language}", user_id)).fetchone()
+            if not job:
+                return {"state": "missing", "completed": 0, "total": 0}
+            completed = db.execute("SELECT COUNT(*) FROM transcription_parts WHERE job_id=?",
+                                   (job["id"],)).fetchone()[0]
+            total = json.loads(job["payload"]).get("total_chunks", 0)
+            return {"state": job["state"], "completed": completed, "total": total}
+
+    def enqueue_transcript_translation(self, lecture_id: str, user_id: str, language: str) -> str | None:
+        from slovech.ai.services import translation_chunks
+
+        source = f"transcript_translation:{lecture_id}:{language}"
+        now = time.time()
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self._require_not_deleting(db, user_id)
+            row = db.execute("SELECT payload FROM lectures WHERE id=? AND user_id=?",
+                             (lecture_id, user_id)).fetchone()
+            if not row:
+                return None
+            lecture = Lecture.model_validate_json(row[0])
+            if lecture.language == language or (
+                lecture.transcription_translation_language == language and lecture.transcription_translated
+            ):
+                return "ready"
+            active = db.execute(
+                """SELECT state,source FROM jobs WHERE user_id=? AND state IN ('pending','running')
+                   AND json_extract(payload,'$.kind')='transcript_translation'
+                   AND json_extract(payload,'$.lecture_id')=? LIMIT 1""",
+                (user_id, lecture_id),
+            ).fetchone()
+            if active:
+                if active["source"] == source:
+                    return active["state"]
+                raise TranslationBusy()
+            existing = db.execute("SELECT id FROM jobs WHERE source=? AND user_id=?",
+                                  (source, user_id)).fetchone()
+            if existing:
+                db.execute(
+                    "UPDATE jobs SET state='pending',attempts=0,error=NULL,available=?,lease_until=NULL "
+                    "WHERE id=?", (now, existing["id"]),
+                )
+                return "pending"
+            counts = db.execute(
+                "SELECT COUNT(*),COALESCE(SUM(user_id=?),0) FROM jobs "
+                "WHERE state IN ('pending','running')", (user_id,),
+            ).fetchone()
+            if counts[0] >= self.settings.max_pending_jobs or counts[1] >= self.settings.max_user_jobs:
+                raise QueueFull()
+            total = len(translation_chunks(lecture.transcription, limit=4000))
+            db.execute(
+                "INSERT INTO jobs(id,source,user_id,payload,available,created) VALUES(?,?,?,?,?,?)",
+                (uuid.uuid4().hex, source, user_id,
+                 json.dumps({"kind": "transcript_translation", "lecture_id": lecture_id,
+                             "target_language": language, "total_chunks": total}), now, now),
+            )
+        return "pending"
+
+    def save_transcript_translation(self, job: dict, translated: str):
+        if not translated.strip():
+            raise ValueError("Empty translated transcript")
+        lecture_id = job["payload"]["lecture_id"]
+        target = job["payload"]["target_language"]
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self._require_job_active(db, job)
+            row = db.execute("SELECT payload FROM lectures WHERE id=? AND user_id=?",
+                             (lecture_id, job["user_id"])).fetchone()
+            if not row:
+                raise ProcessingCancelled()
+            lecture = Lecture.model_validate_json(row[0])
+            updated = lecture.model_copy(update={
+                "transcription_translated": translated,
+                "transcription_translation_language": target,
+            })
+            Lecture.model_validate(updated.model_dump())
             db.execute("UPDATE lectures SET payload=? WHERE id=? AND user_id=?",
                        (updated.model_dump_json(), lecture_id, job["user_id"]))
 

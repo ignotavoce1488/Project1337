@@ -30,7 +30,13 @@ const transcriptBox = document.getElementById('transcriptBox');
 const copyBtn = document.getElementById('copyBtn');
 const transcriptSearch = document.getElementById('transcriptSearch');
 const clearSearchBtn = document.getElementById('clearSearchBtn');
-const currentTranscriptText = () => currentLecture?.formatted_transcription || currentLecture?.transcription || '';
+const currentTranscriptText = () => {
+  if (!currentLecture) return '';
+  if (translatedContent(currentLecture) &&
+      currentLecture.transcription_translation_language === uiLanguage &&
+      currentLecture.transcription_translated) return currentLecture.transcription_translated;
+  return currentLecture.formatted_transcription || currentLecture.transcription || '';
+};
 
 // History Drawer Elements
 const openHistoryBtn = document.getElementById('openHistoryBtn');
@@ -137,10 +143,117 @@ const translateProgress = document.getElementById('translateProgress');
 const translateStatus = document.getElementById('translateStatus');
 const translateElapsed = document.getElementById('translateElapsed');
 const translateTrack = document.getElementById('translateTrack');
+const transcriptTranslationProgress = document.getElementById('transcriptTranslationProgress');
+const transcriptTranslationStatus = document.getElementById('transcriptTranslationStatus');
+const transcriptTranslationCount = document.getElementById('transcriptTranslationCount');
+const transcriptTranslationTrack = document.getElementById('transcriptTranslationTrack');
+const transcriptTranslationFill = document.getElementById('transcriptTranslationFill');
+const retryTranscriptTranslation = document.getElementById('retryTranscriptTranslation');
 let currentAppLang = 'ru';
 let translationTask = null;
 let translationTimer = null;
 let translationStatusRequest = 0;
+let transcriptTranslationTask = null;
+
+function transcriptNeedsTranslation(data) {
+  return Boolean(data?.transcription && translatedContent(data) &&
+    (data.transcription_translation_language !== uiLanguage || !data.transcription_translated));
+}
+
+function renderTranscriptTranslationProgress() {
+  if (!transcriptTranslationProgress) return;
+  const task = transcriptTranslationTask;
+  const visible = currentTab === 'transcript' && transcriptNeedsTranslation(currentLecture) &&
+    task?.lectureId === currentLecture?.id;
+  transcriptTranslationProgress.hidden = !visible;
+  if (!visible) return;
+  transcriptTranslationProgress.dataset.state = task.state;
+  const message = task.state === 'failed' ? transcriptTranslateCopy(2)
+    : task.state === 'pending' ? transcriptTranslateCopy(0) : transcriptTranslateCopy(1);
+  transcriptTranslationStatus.textContent = message;
+  retryTranscriptTranslation.hidden = task.state !== 'failed';
+  retryTranscriptTranslation.textContent = transcriptTranslateCopy(3);
+  const completed = Math.min(task.completed || 0, task.total || 0);
+  const percent = task.total ? Math.round(completed / task.total * 100) : 0;
+  transcriptTranslationCount.textContent = task.total && task.state !== 'failed'
+    ? `${completed}/${task.total} · ${percent}%` : '';
+  transcriptTranslationTrack.setAttribute('aria-valuetext', message);
+  if (completed && task.total) {
+    transcriptTranslationTrack.setAttribute('aria-valuenow', String(percent));
+    transcriptTranslationFill.dataset.determinate = 'true';
+    transcriptTranslationFill.style.width = `${percent}%`;
+  } else {
+    transcriptTranslationTrack.removeAttribute('aria-valuenow');
+    transcriptTranslationFill.dataset.determinate = 'false';
+    transcriptTranslationFill.style.width = '';
+  }
+}
+
+async function pollTranscriptTranslation(task) {
+  if (task.polling) return;
+  task.polling = true;
+  try {
+    for (let attempt = 0; attempt < 3600; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      if (transcriptTranslationTask !== task) return;
+      const response = await apiFetch(`/api/lecture/${encodeURIComponent(task.lectureId)}/transcript-translation`);
+      if (!response.ok) throw new Error('STATUS_FAILED');
+      if (transcriptTranslationTask !== task) return;
+      const status = await response.json();
+      if (status.state === 'ready' || status.state === 'done') {
+        transcriptTranslationTask = null;
+        if (currentLecture?.id === task.lectureId) await loadLecture(task.lectureId, true);
+        return;
+      }
+      if (status.state === 'failed' || status.state === 'missing') throw new Error('TRANSLATION_FAILED');
+      Object.assign(task, status);
+      renderTranscriptTranslationProgress();
+    }
+    throw new Error('TRANSLATION_TIMEOUT');
+  } catch (_) {
+    if (transcriptTranslationTask === task) {
+      task.state = 'failed';
+      renderTranscriptTranslationProgress();
+    }
+  } finally {
+    task.polling = false;
+  }
+}
+
+async function ensureTranscriptTranslation() {
+  if (!transcriptNeedsTranslation(currentLecture) || currentTab !== 'transcript') return;
+  const lectureId = currentLecture.id;
+  if (transcriptTranslationTask?.lectureId === lectureId &&
+      ['pending', 'running'].includes(transcriptTranslationTask.state)) return;
+  const task = {lectureId, state: 'pending', completed: 0, total: 0, polling: false};
+  transcriptTranslationTask = task;
+  renderTranscriptTranslationProgress();
+  try {
+    const response = await apiFetch(`/api/lecture/${encodeURIComponent(lectureId)}/transcript-translation`, {method: 'POST'});
+    if (!response.ok) throw new Error('QUEUE_FAILED');
+    if (transcriptTranslationTask !== task) return;
+    const {state} = await response.json();
+    if (state === 'ready') {
+      transcriptTranslationTask = null;
+      await loadLecture(lectureId, true);
+    } else if (state === 'pending' || state === 'running') {
+      task.state = state;
+      renderTranscriptTranslationProgress();
+      pollTranscriptTranslation(task);
+    } else {
+      throw new Error('TRANSLATION_FAILED');
+    }
+  } catch (_) {
+    if (transcriptTranslationTask === task) {
+      task.state = 'failed';
+      renderTranscriptTranslationProgress();
+    }
+  }
+}
+
+if (retryTranscriptTranslation) {
+  retryTranscriptTranslation.addEventListener('click', ensureTranscriptTranslation);
+}
 
 function stopTranslationTask() {
   translationTask = null;
@@ -330,7 +443,7 @@ takeawaysMoreBtn.addEventListener('click', () => {
 });
 
 // === Load Lecture Data ===
-async function loadLecture(id = null) {
+async function loadLecture(id = null, preserveLanguage = false) {
   const urlParams = new URLSearchParams(window.location.search);
   const targetId = id || urlParams.get('id');
   const requestNumber = ++lectureRequestNumber;
@@ -350,6 +463,7 @@ async function loadLecture(id = null) {
     if (data.empty) {
       translationStatusRequest += 1;
       stopTranslationTask();
+      transcriptTranslationTask = null;
       currentLecture = null;
       emptyStateEl.style.display = 'block';
       const emptyIcon = emptyStateEl.querySelector('.empty-icon');
@@ -361,9 +475,15 @@ async function loadLecture(id = null) {
       return;
     }
 
+    const keepOriginal = preserveLanguage && currentLecture?.id === data.id &&
+      currentAppLang === currentLecture.language;
     translationStatusRequest += 1;
     if (translationTask && (translationTask.lectureId !== data.id ||
       data.language === uiLanguage || translatedLanguage(data) === uiLanguage)) stopTranslationTask();
+    if (transcriptTranslationTask && (transcriptTranslationTask.lectureId !== data.id ||
+      data.transcription_translation_language === uiLanguage && data.transcription_translated)) {
+      transcriptTranslationTask = null;
+    }
     currentLecture = data;
     takeawaysExpanded = false;
     emptyStateEl.style.display = 'none';
@@ -374,7 +494,8 @@ async function loadLecture(id = null) {
     statusPillEl.textContent = targetId ? ui(12) : ui(4);
 
     // Language Toggle Setup
-    currentAppLang = translatedLanguage(data) === uiLanguage ? uiLanguage : (data.language || 'auto');
+    currentAppLang = keepOriginal ? data.language
+      : translatedLanguage(data) === uiLanguage ? uiLanguage : (data.language || 'auto');
     updateLanguageSwap(data);
     restoreTranslationStatus(data);
 
@@ -382,6 +503,8 @@ async function loadLecture(id = null) {
     if (transcriptSearch) transcriptSearch.value = '';
     if (clearSearchBtn) clearSearchBtn.style.display = 'none';
     renderTranscript(currentTranscriptText());
+    renderTranscriptTranslationProgress();
+    if (currentTab === 'transcript') ensureTranscriptTranslation();
 
     // Setup Audio Player
     if (currentLecture && currentLecture.transcription) {
@@ -395,6 +518,7 @@ async function loadLecture(id = null) {
     if (requestNumber !== lectureRequestNumber) return;
     translationStatusRequest += 1;
     stopTranslationTask();
+    transcriptTranslationTask = null;
     currentLecture = null;
     console.error(err);
     emptyStateEl.style.display = 'block';
@@ -615,6 +739,8 @@ document.querySelectorAll('.tab-item').forEach(btn => {
     btn.classList.add('active');
     document.getElementById(`pane-${target}`).classList.add('active');
     currentTab = target;
+    renderTranscriptTranslationProgress();
+    if (target === 'transcript') ensureTranscriptTranslation();
   });
 });
 
@@ -712,6 +838,9 @@ if (langToggleBtn) {
       ? currentLecture.language : translatedLanguage(currentLecture);
     updateLanguageSwap(currentLecture);
     renderLectureContent(currentLecture, currentAppLang);
+    renderTranscript(currentTranscriptText(), transcriptSearch?.value.trim() || '');
+    renderTranscriptTranslationProgress();
+    if (currentTab === 'transcript') ensureTranscriptTranslation();
   });
 }
 

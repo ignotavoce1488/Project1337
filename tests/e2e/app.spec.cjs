@@ -125,6 +125,43 @@ test('failed translation shows a retry state', async ({page}) => {
   await expect(page.locator('#translateTrack')).toBeHidden();
 });
 
+test('translated notes also translate the transcript and keep the original', async ({page}) => {
+  await prepare(page);
+  let ready = false;
+  await page.route('**/api/preferences', route => route.fulfill({json: {interface_language: 'de'}}));
+  await page.route('**/api/lecture/lecture100/transcript-translation', route => route.fulfill({
+    json: {state: route.request().method() === 'POST' ? 'pending' : ready ? 'ready' : 'running',
+      completed: ready ? 2 : 1, total: 2, language: 'de'}
+  }));
+  const translatedLecture = async route => {
+    const response = await route.fetch();
+    const lecture = await response.json();
+    Object.assign(lecture, {language: 'ru', title: 'Квантовая физика',
+      summary: 'Русский конспект', transcription: 'Русская расшифровка о квантовой физике.',
+      formatted_transcription: null, translation_language: 'de',
+      title_translated: 'Quantenphysik', summary_translated: 'Deutsche Notizen',
+      key_points_translated: ['Deutscher Punkt']});
+    if (ready) Object.assign(lecture, {transcription_translation_language: 'de',
+      transcription_translated: 'Deutsches Transkript über Quantenphysik.'});
+    await route.fulfill({response, json: lecture});
+  };
+  await page.route('**/api/lecture/latest', translatedLecture);
+  await page.route('**/api/lecture/lecture100', translatedLecture);
+  await page.goto('/app');
+  await expect(page.locator('#summaryBox')).toContainText('Deutsche Notizen');
+  await page.locator('[data-tab="transcript"]').click();
+  await expect(page.locator('#transcriptTranslationProgress')).toBeVisible();
+  await expect(page.locator('#transcriptBox')).toContainText('Русская расшифровка');
+  await expect(page.locator('#transcriptTranslationCount')).toHaveText('1/2 · 50%', {timeout: 7000});
+  ready = true;
+  await expect(page.locator('#transcriptBox')).toContainText('Deutsches Transkript', {timeout: 7000});
+  await expect(page.locator('#transcriptTranslationProgress')).toBeHidden();
+  await page.locator('#langToggleBtn').click();
+  await expect(page.locator('#transcriptBox')).toContainText('Русская расшифровка');
+  await page.locator('#langToggleBtn').click();
+  await expect(page.locator('#transcriptBox')).toContainText('Deutsches Transkript');
+});
+
 test('history search includes transcript text', async ({page}) => {
   await prepare(page);
   await page.goto('/app');

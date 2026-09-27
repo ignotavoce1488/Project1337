@@ -55,3 +55,55 @@ def test_search_index_clears_with_lecture_deletion(repo, lecture):
         erase_user_rows(db, "123")
         assert db.execute("SELECT count(*) FROM lecture_search WHERE user_id='123'").fetchone()[0] == 0
     assert repo.search_lectures("123", "квант") == []
+
+
+async def test_transcript_translation_uses_bounded_chunks_and_survives_retry(
+    client, repo, lecture, headers, monkeypatch
+):
+    from slovech.ai.services import translation_chunks
+
+    original = "Русское предложение с важным фактом. " * 220
+    repo.save(lecture.model_copy(update={"language": "ru", "transcription": original}))
+    repo.set_preferences("123", interface_language="de")
+    endpoint = "/api/lecture/lecture1/transcript-translation"
+    assert client.post(endpoint, headers={"X-Telegram-Init-Data": signed(999)}).status_code == 404
+    assert client.get(endpoint, headers=headers).json()["state"] == "missing"
+    assert client.post(endpoint, headers=headers).json()["state"] == "pending"
+    assert client.post(endpoint, headers=headers).json()["state"] == "pending"
+    chunks = translation_chunks(original, limit=4000)
+    assert len(chunks) > 1
+    job = repo.claim()
+    repo.save_transcription_part(job["id"], 0, "Erster übersetzter Teil.")
+    status = client.get(endpoint, headers=headers).json()
+    assert (status["state"], status["completed"], status["total"]) == (
+        "running", 1, len(chunks)
+    )
+    repo.finish(job, "temporary provider error")
+    with repo.connection() as db:
+        db.execute("UPDATE jobs SET available=0 WHERE id=?", (job["id"],))
+    translate = AsyncMock(side_effect=lambda _text, _language: "Zweiter übersetzter Teil.")
+    monkeypatch.setattr("slovech.worker.translate_transcription_chunk_with_openrouter", translate)
+    job = repo.claim()
+    await process_job(job, AsyncMock(), repo)
+    repo.finish(job)
+    assert translate.await_count == len(chunks) - 1
+    saved = repo.get("lecture1", "123")
+    assert saved.transcription == original
+    assert saved.transcription_translation_language == "de"
+    assert saved.transcription_translated.startswith("Erster übersetzter Teil.")
+    assert client.get(endpoint, headers=headers).json()["state"] == "ready"
+    assert [item["id"] for item in repo.search_lectures("123", "übersetzter")] == ["lecture1"]
+
+
+def test_optional_transcript_formatting_preserves_new_translation(repo, lecture):
+    repo.save(lecture)
+    job_id = "translation-job"
+    repo.enqueue(job_id, "transcript_translation:lecture1:de", "123", {
+        "kind": "transcript_translation", "lecture_id": "lecture1", "target_language": "de",
+    })
+    job = repo.claim()
+    repo.save_transcript_translation(job, "Deutscher Text")
+    repo.update_formatted_transcription(lecture.model_copy(update={"formatted_transcription": "Text."}))
+    saved = repo.get("lecture1", "123")
+    assert saved.formatted_transcription == "Text."
+    assert saved.transcription_translated == "Deutscher Text"

@@ -44,6 +44,21 @@ const TRANSLATE_COPY = {
   tk: ['Bellikleri terjime et', 'Bellikler terjime edilýär…', 'Terjime başartmady. Gaýtadan synanyşyň.', 'Terjime nobatyna garaşylýar…'],
 };
 const translateCopy = (index) => (TRANSLATE_COPY[uiLanguage] || TRANSLATE_COPY.en)[index];
+const TRANSCRIPT_TRANSLATE_COPY = {
+  ru: ['Ждём перевод расшифровки…', 'Переводим расшифровку…', 'Не удалось перевести расшифровку.', 'Повторить перевод'],
+  en: ['Waiting to translate transcript…', 'Translating transcript…', 'Transcript translation failed.', 'Try again'],
+  es: ['Esperando para traducir la transcripción…', 'Traduciendo la transcripción…', 'No se pudo traducir la transcripción.', 'Reintentar'],
+  fr: ['En attente de traduction de la transcription…', 'Traduction de la transcription…', 'Échec de la traduction de la transcription.', 'Réessayer'],
+  de: ['Warten auf die Transkriptübersetzung…', 'Transkript wird übersetzt…', 'Transkriptübersetzung fehlgeschlagen.', 'Erneut versuchen'],
+  it: ['In attesa di tradurre la trascrizione…', 'Traduzione della trascrizione…', 'Traduzione della trascrizione non riuscita.', 'Riprova'],
+  pt: ['A aguardar tradução da transcrição…', 'A traduzir a transcrição…', 'Falha na tradução da transcrição.', 'Tentar novamente'],
+  tr: ['Döküm çevirisi bekleniyor…', 'Döküm çevriliyor…', 'Döküm çevirisi başarısız.', 'Tekrar dene'],
+  ar: ['في انتظار ترجمة التفريغ…', 'جارٍ ترجمة التفريغ…', 'تعذرت ترجمة التفريغ.', 'حاول مرة أخرى'],
+  hi: ['प्रतिलेख अनुवाद की प्रतीक्षा हो रही है…', 'प्रतिलेख का अनुवाद हो रहा है…', 'प्रतिलेख का अनुवाद नहीं हुआ।', 'फिर कोशिश करें'],
+  tk: ['Ýazgynyň terjimesine garaşylýar…', 'Ýazgy terjime edilýär…', 'Ýazgynyň terjimesi başartmady.', 'Gaýtadan synanyş'],
+};
+const transcriptTranslateCopy = (index) =>
+  (TRANSCRIPT_TRANSLATE_COPY[uiLanguage] || TRANSCRIPT_TRANSLATE_COPY.en)[index];
 const SEARCH_ERROR = {
   ru: 'Не удалось выполнить поиск.', en: 'Search is unavailable.',
   es: 'No se pudo buscar.', fr: 'Recherche indisponible.',

@@ -26,6 +26,8 @@ from slovech.ai.services import (
     generate_summary_with_openrouter,
     paragraphize_transcription,
     translate_summary_with_openrouter,
+    translate_transcription_chunk_with_openrouter,
+    translation_chunks,
 )
 from slovech.core.config import get_settings
 from slovech.core.logging import configure_logging
@@ -248,6 +250,32 @@ async def process_job(job: dict, bot, repository: Repository):
         await asyncio.to_thread(repository.legal_stage, job["user_id"]) != "ready"
     ):
         raise LegalAcceptanceRequired()
+    if job["payload"].get("kind") == "transcript_translation":
+        lecture = await asyncio.to_thread(
+            repository.get, job["payload"]["lecture_id"], job["user_id"]
+        )
+        if not lecture:
+            raise ProcessingCancelled()
+        target = job["payload"]["target_language"]
+        if lecture.language == target or (
+            lecture.transcription_translation_language == target and lecture.transcription_translated
+        ):
+            return
+        chunks = translation_chunks(lecture.transcription, limit=4000)
+        if not chunks:
+            raise SummaryUnavailable("Transcript is empty")
+        translated_parts = []
+        for index, chunk in enumerate(chunks):
+            repository.ensure_processing_allowed(job)
+            translated = await asyncio.to_thread(repository.get_transcription_part, job["id"], index)
+            if translated is None:
+                translated = await translate_transcription_chunk_with_openrouter(chunk, target)
+                await asyncio.to_thread(repository.save_transcription_part, job["id"], index, translated)
+            translated_parts.append(translated)
+        await asyncio.to_thread(
+            repository.save_transcript_translation, job, "\n\n".join(translated_parts)
+        )
+        return
     if job["payload"].get("kind") == "translation":
         lecture = await asyncio.to_thread(
             repository.get, job["payload"]["lecture_id"], job["user_id"]
@@ -511,7 +539,7 @@ async def run_worker(stop: asyncio.Event):
                 logger.error("Job failed id=%s type=%s", job["id"], error)
                 terminal = isinstance(exc, (SummaryUnavailable, LegalAcceptanceRequired))
                 await asyncio.to_thread(repository.finish, job, error, terminal=terminal)
-                if job["payload"].get("kind") != "translation" and (
+                if job["payload"].get("kind") not in {"translation", "transcript_translation"} and (
                     terminal or job["attempts"] >= 3
                 ):
                     if isinstance(exc, LegalAcceptanceRequired):

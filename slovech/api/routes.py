@@ -195,6 +195,29 @@ def get_lecture_translation_status(lecture_id: str, user_id: Owner, repo: Repo):
             "language": language}
 
 
+@router.post("/api/lecture/{lecture_id}/transcript-translation")
+def request_transcript_translation(lecture_id: str, user_id: Owner, repo: Repo):
+    require_lecture(lecture_id, user_id, repo)
+    language = repo.get_preferences(user_id)["interface_language"] or "ru"
+    try:
+        state = repo.enqueue_transcript_translation(lecture_id, user_id, language)
+    except TranslationBusy as exc:
+        raise HTTPException(409, "Another transcript translation is in progress") from exc
+    except QueueFull as exc:
+        raise HTTPException(429, "Processing queue is full") from exc
+    except ProcessingCancelled as exc:
+        raise HTTPException(403, "Account is being deleted") from exc
+    return {"state": state, "language": language}
+
+
+@router.get("/api/lecture/{lecture_id}/transcript-translation")
+def get_transcript_translation_status(lecture_id: str, user_id: Owner, repo: Repo):
+    require_lecture(lecture_id, user_id, repo)
+    language = repo.get_preferences(user_id)["interface_language"] or "ru"
+    return {**repo.transcript_translation_status(lecture_id, user_id, language),
+            "language": language}
+
+
 @router.get("/audio/{filename}")
 def get_audio(filename: str, user_id: Owner, repo: Repo):
     if not SAFE_AUDIO_REGEX.fullmatch(filename):
