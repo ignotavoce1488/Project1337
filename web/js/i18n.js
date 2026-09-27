@@ -31,17 +31,17 @@ const SWAP_COPY = {
 };
 
 const TRANSLATE_COPY = {
-  ru: ['Перевести конспект', 'Переводим конспект…', 'Не удалось перевести. Нажмите ещё раз.'],
-  en: ['Translate notes', 'Translating notes…', 'Translation failed. Try again.'],
-  es: ['Traducir notas', 'Traduciendo notas…', 'No se pudo traducir. Inténtalo de nuevo.'],
-  fr: ['Traduire les notes', 'Traduction en cours…', 'Échec de la traduction. Réessayez.'],
-  de: ['Notizen übersetzen', 'Notizen werden übersetzt…', 'Übersetzung fehlgeschlagen. Erneut versuchen.'],
-  it: ['Traduci appunti', 'Traduzione in corso…', 'Traduzione non riuscita. Riprova.'],
-  pt: ['Traduzir notas', 'Traduzindo notas…', 'Falha na tradução. Tente novamente.'],
-  tr: ['Notları çevir', 'Notlar çevriliyor…', 'Çeviri başarısız. Tekrar deneyin.'],
-  ar: ['ترجمة الملخص', 'جارٍ ترجمة الملخص…', 'تعذرت الترجمة. حاول مرة أخرى.'],
-  hi: ['नोट्स का अनुवाद करें', 'नोट्स का अनुवाद हो रहा है…', 'अनुवाद नहीं हुआ। फिर कोशिश करें।'],
-  tk: ['Bellikleri terjime et', 'Bellikler terjime edilýär…', 'Terjime başartmady. Gaýtadan synanyşyň.'],
+  ru: ['Перевести конспект', 'Переводим конспект…', 'Не удалось перевести. Нажмите ещё раз.', 'Ждём очередь на перевод…'],
+  en: ['Translate notes', 'Translating notes…', 'Translation failed. Try again.', 'Waiting to translate…'],
+  es: ['Traducir notas', 'Traduciendo notas…', 'No se pudo traducir. Inténtalo de nuevo.', 'Esperando turno para traducir…'],
+  fr: ['Traduire les notes', 'Traduction en cours…', 'Échec de la traduction. Réessayez.', 'En attente de traduction…'],
+  de: ['Notizen übersetzen', 'Notizen werden übersetzt…', 'Übersetzung fehlgeschlagen. Erneut versuchen.', 'Warten auf die Übersetzung…'],
+  it: ['Traduci appunti', 'Traduzione in corso…', 'Traduzione non riuscita. Riprova.', 'In attesa della traduzione…'],
+  pt: ['Traduzir notas', 'Traduzindo notas…', 'Falha na tradução. Tente novamente.', 'A aguardar tradução…'],
+  tr: ['Notları çevir', 'Notlar çevriliyor…', 'Çeviri başarısız. Tekrar deneyin.', 'Çeviri sırası bekleniyor…'],
+  ar: ['ترجمة الملخص', 'جارٍ ترجمة الملخص…', 'تعذرت الترجمة. حاول مرة أخرى.', 'في انتظار الترجمة…'],
+  hi: ['नोट्स का अनुवाद करें', 'नोट्स का अनुवाद हो रहा है…', 'अनुवाद नहीं हुआ। फिर कोशिश करें।', 'अनुवाद की प्रतीक्षा हो रही है…'],
+  tk: ['Bellikleri terjime et', 'Bellikler terjime edilýär…', 'Terjime başartmady. Gaýtadan synanyşyň.', 'Terjime nobatyna garaşylýar…'],
 };
 const translateCopy = (index) => (TRANSLATE_COPY[uiLanguage] || TRANSLATE_COPY.en)[index];
 const SEARCH_ERROR = {

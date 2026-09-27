@@ -73,6 +73,58 @@ test('old recording can be translated from the Mini App', async ({page}) => {
   await expect(page.locator('#langToggleBtn')).toBeVisible();
 });
 
+test('translation progress remains visible after reopening the notes', async ({page}) => {
+  await prepare(page);
+  let progressState = 'pending';
+  let requested = false;
+  await page.route('**/api/preferences', route => route.fulfill({json: {interface_language: 'es'}}));
+  await page.route('**/api/lecture/lecture100/translation', route => {
+    if (route.request().method() === 'POST') requested = true;
+    return route.fulfill({json: {state: !requested ? 'missing' : progressState, language: 'es'}});
+  });
+  await page.route('**/api/lecture/lecture100', async route => {
+    const response = await route.fetch();
+    const lecture = await response.json();
+    if (progressState === 'ready') Object.assign(lecture, {translation_language: 'es', title_translated: 'Clase cien',
+      summary_translated: '## Resumen en español', key_points_translated: ['Idea principal']});
+    await route.fulfill({response, json: lecture});
+  });
+  await page.goto('/app');
+  await page.locator('#translateBtn').click();
+  await expect(page.locator('#translateProgress')).toBeVisible();
+  await expect(page.locator('#translateStatus')).toContainText('Esperando');
+  await expect(page.locator('#translateTrack')).toHaveAttribute('role', 'progressbar');
+  await expect(page.locator('#translateBtn')).toBeDisabled();
+  await page.screenshot({path: 'test-results/translation-progress.png', fullPage: true});
+  await page.reload();
+  await expect(page.locator('#translateProgress')).toBeVisible();
+  await expect(page.locator('#translateBtn')).toBeDisabled();
+  progressState = 'running';
+  await expect(page.locator('#translateStatus')).toContainText('Traduciendo', {timeout: 7000});
+  await expect(page.locator('#translateElapsed')).not.toHaveText('');
+  progressState = 'ready';
+  await expect(page.locator('#lectureTitle')).toHaveText('Clase cien', {timeout: 7000});
+  await expect(page.locator('#translateProgress')).toBeHidden();
+  await expect(page.locator('#langToggleBtn')).toBeVisible();
+});
+
+test('failed translation shows a retry state', async ({page}) => {
+  await prepare(page);
+  let failed = false;
+  let requested = false;
+  await page.route('**/api/preferences', route => route.fulfill({json: {interface_language: 'es'}}));
+  await page.route('**/api/lecture/lecture100/translation', route => {
+    if (route.request().method() === 'POST') requested = true;
+    return route.fulfill({json: {state: !requested ? 'missing' : failed ? 'failed' : 'pending', language: 'es'}});
+  });
+  await page.goto('/app');
+  await page.locator('#translateBtn').click();
+  failed = true;
+  await expect(page.locator('#translateStatus')).toContainText('Inténtalo de nuevo', {timeout: 7000});
+  await expect(page.locator('#translateBtn')).toBeEnabled();
+  await expect(page.locator('#translateTrack')).toBeHidden();
+});
+
 test('history search includes transcript text', async ({page}) => {
   await prepare(page);
   await page.goto('/app');

@@ -133,9 +133,100 @@ function applyIOSSelectionFix(container) {
 const langToggleBtn = document.getElementById('langToggleBtn');
 const langToggleText = document.getElementById('langToggleText');
 const translateBtn = document.getElementById('translateBtn');
+const translateProgress = document.getElementById('translateProgress');
 const translateStatus = document.getElementById('translateStatus');
+const translateElapsed = document.getElementById('translateElapsed');
+const translateTrack = document.getElementById('translateTrack');
 let currentAppLang = 'ru';
-let translationPending = false;
+let translationTask = null;
+let translationTimer = null;
+let translationStatusRequest = 0;
+
+function stopTranslationTask() {
+  translationTask = null;
+  if (translationTimer) clearInterval(translationTimer);
+  translationTimer = null;
+}
+
+function renderTranslationProgress(data) {
+  if (!translateProgress) return;
+  const task = translationTask?.lectureId === data.id ? translationTask : null;
+  const visible = task && data.language !== uiLanguage && translatedLanguage(data) !== uiLanguage;
+  translateProgress.hidden = !visible;
+  if (!visible) return;
+  translateProgress.dataset.state = task.state;
+  const message = task.state === 'failed' ? translateCopy(2)
+    : task.state === 'pending' ? translateCopy(3) : translateCopy(1);
+  translateStatus.textContent = message;
+  translateTrack.setAttribute('aria-valuetext', message);
+  const seconds = Math.floor((Date.now() - task.startedAt) / 1000);
+  translateElapsed.textContent = task.state === 'failed' ? ''
+    : `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function setTranslationTask(lectureId, state) {
+  if (translationTask?.lectureId !== lectureId || translationTask.state === 'failed') {
+    stopTranslationTask();
+    translationTask = {lectureId, state, startedAt: Date.now(), polling: false};
+  } else {
+    translationTask.state = state;
+  }
+  if (state !== 'failed' && !translationTimer) {
+    translationTimer = setInterval(() => {
+      if (currentLecture) renderTranslationProgress(currentLecture);
+    }, 1000);
+  }
+  if (state === 'failed' && translationTimer) {
+    clearInterval(translationTimer);
+    translationTimer = null;
+  }
+  if (currentLecture) updateLanguageSwap(currentLecture);
+  return translationTask;
+}
+
+async function pollTranslation(task) {
+  if (task.polling) return;
+  task.polling = true;
+  try {
+    for (let attempt = 0; attempt < 300; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      if (translationTask !== task) return;
+      const response = await apiFetch(`/api/lecture/${encodeURIComponent(task.lectureId)}/translation`);
+      if (!response.ok) throw new Error('STATUS_FAILED');
+      if (translationTask !== task) return;
+      const state = (await response.json()).state;
+      if (state === 'ready' || state === 'done') {
+        stopTranslationTask();
+        if (currentLecture?.id === task.lectureId) await loadLecture(task.lectureId);
+        return;
+      }
+      if (state === 'failed' || state === 'missing') throw new Error('TRANSLATION_FAILED');
+      setTranslationTask(task.lectureId, state);
+    }
+    throw new Error('TRANSLATION_TIMEOUT');
+  } catch (_) {
+    if (translationTask === task) setTranslationTask(task.lectureId, 'failed');
+  } finally {
+    task.polling = false;
+  }
+}
+
+async function restoreTranslationStatus(data) {
+  if (data.language === uiLanguage || translatedLanguage(data) === uiLanguage) return;
+  if (translationTask?.lectureId === data.id) return;
+  const request = ++translationStatusRequest;
+  try {
+    const response = await apiFetch(`/api/lecture/${encodeURIComponent(data.id)}/translation`);
+    if (!response.ok) return;
+    const {state} = await response.json();
+    if (request !== translationStatusRequest || currentLecture?.id !== data.id || translationTask) return;
+    if (state === 'pending' || state === 'running') {
+      pollTranslation(setTranslationTask(data.id, state));
+    } else if (state === 'failed') {
+      setTranslationTask(data.id, 'failed');
+    }
+  } catch (_) { /* The translate button remains available when status cannot be loaded. */ }
+}
 
 function translatedLanguage(data) {
   if (data.translation_language && data.summary_translated) return data.translation_language;
@@ -158,42 +249,37 @@ function updateLanguageSwap(data) {
   if (translateBtn) {
     translateBtn.style.display = canTranslate ? '' : 'none';
     translateBtn.textContent = translateCopy(0);
-    translateBtn.disabled = translationPending;
+    translateBtn.disabled = Boolean(translationTask?.lectureId === data.id &&
+      ['pending', 'running'].includes(translationTask.state));
   }
   if (langToggleText && canSwap) {
     const showingTranslation = translatedContent(data);
     langToggleText.textContent = languageSwapLabel(showingTranslation, showingTranslation ? data.language : translation);
   }
+  renderTranslationProgress(data);
 }
 
 if (translateBtn) {
   translateBtn.addEventListener('click', async () => {
-    if (!currentLecture || translationPending) return;
+    if (!currentLecture || translateBtn.disabled) return;
     const lectureId = currentLecture.id;
-    translationPending = true;
-    translateBtn.disabled = true;
-    if (translateStatus) translateStatus.textContent = translateCopy(1);
+    const task = setTranslationTask(lectureId, 'pending');
     try {
       const queued = await apiFetch(`/api/lecture/${encodeURIComponent(lectureId)}/translation`, {method: 'POST'});
       if (!queued.ok) throw new Error('QUEUE_FAILED');
-      let state = (await queued.json()).state;
-      for (let attempt = 0; attempt < 300 && !['ready', 'done', 'failed'].includes(state); attempt++) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        const response = await apiFetch(`/api/lecture/${encodeURIComponent(lectureId)}/translation`);
-        if (!response.ok) throw new Error('STATUS_FAILED');
-        state = (await response.json()).state;
+      if (translationTask !== task) return;
+      const {state} = await queued.json();
+      if (state === 'ready' || state === 'done') {
+        stopTranslationTask();
+        if (currentLecture?.id === lectureId) await loadLecture(lectureId);
+      } else if (state === 'pending' || state === 'running') {
+        setTranslationTask(lectureId, state);
+        pollTranslation(task);
+      } else {
+        throw new Error('TRANSLATION_FAILED');
       }
-      if (state !== 'ready' && state !== 'done') throw new Error('TRANSLATION_FAILED');
-      if (currentLecture?.id === lectureId) await loadLecture(lectureId);
     } catch (_) {
-      if (currentLecture?.id === lectureId && translateStatus) translateStatus.textContent = translateCopy(2);
-    } finally {
-      translationPending = false;
-      if (currentLecture?.id === lectureId) {
-        translateBtn.disabled = false;
-        updateLanguageSwap(currentLecture);
-        if (translateStatus && translatedLanguage(currentLecture) === uiLanguage) translateStatus.textContent = '';
-      }
+      if (translationTask === task) setTranslationTask(lectureId, 'failed');
     }
   });
 }
@@ -262,6 +348,8 @@ async function loadLecture(id = null) {
     if (requestNumber !== lectureRequestNumber) return;
 
     if (data.empty) {
+      translationStatusRequest += 1;
+      stopTranslationTask();
       currentLecture = null;
       emptyStateEl.style.display = 'block';
       const emptyIcon = emptyStateEl.querySelector('.empty-icon');
@@ -273,6 +361,9 @@ async function loadLecture(id = null) {
       return;
     }
 
+    translationStatusRequest += 1;
+    if (translationTask && (translationTask.lectureId !== data.id ||
+      data.language === uiLanguage || translatedLanguage(data) === uiLanguage)) stopTranslationTask();
     currentLecture = data;
     takeawaysExpanded = false;
     emptyStateEl.style.display = 'none';
@@ -285,6 +376,7 @@ async function loadLecture(id = null) {
     // Language Toggle Setup
     currentAppLang = translatedLanguage(data) === uiLanguage ? uiLanguage : (data.language || 'auto');
     updateLanguageSwap(data);
+    restoreTranslationStatus(data);
 
     renderLectureContent(data, currentAppLang);
     if (transcriptSearch) transcriptSearch.value = '';
@@ -301,6 +393,8 @@ async function loadLecture(id = null) {
 
   } catch (err) {
     if (requestNumber !== lectureRequestNumber) return;
+    translationStatusRequest += 1;
+    stopTranslationTask();
     currentLecture = null;
     console.error(err);
     emptyStateEl.style.display = 'block';
