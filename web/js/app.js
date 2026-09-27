@@ -154,6 +154,47 @@ let translationTask = null;
 let translationTimer = null;
 let translationStatusRequest = 0;
 let transcriptTranslationTask = null;
+const transcriptProgressSpring = {position: 0, velocity: 0, target: 0, frame: 0, lastTime: 0};
+
+function resetTranscriptProgressSpring() {
+  if (transcriptProgressSpring.frame) cancelAnimationFrame(transcriptProgressSpring.frame);
+  Object.assign(transcriptProgressSpring, {position: 0, velocity: 0, target: 0, frame: 0, lastTime: 0});
+  transcriptTranslationFill.style.transform = '';
+  transcriptTranslationFill.dataset.determinate = 'false';
+}
+
+function moveTranscriptProgressTo(target) {
+  const spring = transcriptProgressSpring;
+  spring.target = Math.max(0, Math.min(1, target));
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (spring.frame) cancelAnimationFrame(spring.frame);
+    Object.assign(spring, {position: spring.target, velocity: 0, frame: 0, lastTime: 0});
+    transcriptTranslationFill.style.transform = `scaleX(${spring.target})`;
+    return;
+  }
+  if (spring.frame) return;
+  const step = (time) => {
+    const elapsed = spring.lastTime ? Math.min((time - spring.lastTime) / 1000, .05) : 1 / 60;
+    spring.lastTime = time;
+    const steps = Math.max(1, Math.ceil(elapsed / .016));
+    const dt = elapsed / steps;
+    for (let index = 0; index < steps; index++) {
+      const acceleration = 110 * (spring.target - spring.position) - 22 * spring.velocity;
+      spring.velocity += acceleration * dt;
+      spring.position += spring.velocity * dt;
+    }
+    if (Math.abs(spring.target - spring.position) < .001 && Math.abs(spring.velocity) < .01) {
+      spring.position = spring.target;
+      spring.velocity = 0;
+      spring.frame = 0;
+      spring.lastTime = 0;
+    } else {
+      spring.frame = requestAnimationFrame(step);
+    }
+    transcriptTranslationFill.style.transform = `scaleX(${Math.max(0, Math.min(1, spring.position))})`;
+  };
+  spring.frame = requestAnimationFrame(step);
+}
 
 function transcriptNeedsTranslation(data) {
   return Boolean(data?.transcription && translatedContent(data) &&
@@ -181,19 +222,13 @@ function renderTranscriptTranslationProgress() {
   if (completed && task.total) {
     transcriptTranslationTrack.setAttribute('aria-valuenow', String(percent));
     if (transcriptTranslationFill.dataset.determinate !== 'true') {
+      resetTranscriptProgressSpring();
       transcriptTranslationFill.dataset.determinate = 'true';
-      transcriptTranslationFill.style.width = '0%';
-      transcriptTranslationFill.getBoundingClientRect();
-      requestAnimationFrame(() => {
-        if (transcriptTranslationTask === task) transcriptTranslationFill.style.width = `${percent}%`;
-      });
-    } else {
-      transcriptTranslationFill.style.width = `${percent}%`;
     }
+    moveTranscriptProgressTo(percent / 100);
   } else {
     transcriptTranslationTrack.removeAttribute('aria-valuenow');
-    transcriptTranslationFill.dataset.determinate = 'false';
-    transcriptTranslationFill.style.width = '';
+    if (transcriptTranslationFill.dataset.determinate === 'true') resetTranscriptProgressSpring();
   }
 }
 
@@ -234,6 +269,7 @@ async function ensureTranscriptTranslation() {
   if (transcriptTranslationTask?.lectureId === lectureId &&
       ['pending', 'running'].includes(transcriptTranslationTask.state)) return;
   const task = {lectureId, state: 'pending', completed: 0, total: 0, polling: false};
+  resetTranscriptProgressSpring();
   transcriptTranslationTask = task;
   renderTranscriptTranslationProgress();
   try {

@@ -108,6 +108,50 @@ test('translation progress remains visible after reopening the notes', async ({p
   await expect(page.locator('#langToggleBtn')).toBeVisible();
 });
 
+test('progress sweep follows RTL and reduced motion stops animation', async ({page}) => {
+  await prepare(page);
+  let requested = false;
+  await page.route('**/api/preferences', route => route.fulfill({json: {interface_language: 'ar'}}));
+  await page.route('**/api/lecture/lecture100/translation', route => {
+    if (route.request().method() === 'POST') requested = true;
+    return route.fulfill({json: {state: requested ? 'pending' : 'missing', language: 'ar'}});
+  });
+  await page.goto('/app');
+  await page.locator('#translateBtn').click();
+  await expect(page.locator('#translateTrack')).toBeVisible();
+  await expect(page.locator('#translateTrack .translation-track-fill')).toHaveCSS('animation-name', 'translation-sweep-rtl');
+  const sweep = await page.evaluate(() => {
+    const fill = document.querySelector('#translateTrack .translation-track-fill');
+    const track = document.getElementById('translateTrack').getBoundingClientRect();
+    const animation = fill.getAnimations()[0];
+    animation.pause();
+    const positions = [100, 400, 800, 1200, 1600, 2000].map(time => {
+      animation.currentTime = time;
+      return fill.getBoundingClientRect().left;
+    });
+    animation.currentTime = 0;
+    const start = fill.getBoundingClientRect();
+    animation.currentTime = 2199;
+    const end = fill.getBoundingClientRect();
+    return {positions, startsOffscreen: start.left >= track.right,
+      endsOffscreen: end.right <= track.left};
+  });
+  expect(sweep.positions.every((position, index) =>
+    index === 0 || position < sweep.positions[index - 1])).toBe(true);
+  expect(sweep.startsOffscreen).toBe(true);
+  expect(sweep.endsOffscreen).toBe(true);
+  await page.emulateMedia({reducedMotion: 'reduce'});
+  await expect(page.locator('#translateTrack .translation-track-fill')).toHaveCSS('animation-name', 'none');
+  const reducedProgress = await page.evaluate(() => {
+    const fill = document.getElementById('transcriptTranslationFill');
+    window.resetTranscriptProgressSpring();
+    fill.dataset.determinate = 'true';
+    window.moveTranscriptProgressTo(.6);
+    return new DOMMatrixReadOnly(fill.style.transform).a;
+  });
+  expect(reducedProgress).toBeCloseTo(.6, 3);
+});
+
 test('failed translation shows a retry state', async ({page}) => {
   await prepare(page);
   let failed = false;
@@ -152,9 +196,59 @@ test('translated notes also translate the transcript and keep the original', asy
   await page.locator('[data-tab="transcript"]').click();
   await expect(page.locator('#transcriptTranslationProgress')).toBeVisible();
   await expect(page.locator('#transcriptBox')).toContainText('Русская расшифровка');
-  await expect(page.locator('#transcriptTranslationFill')).toHaveCSS('animation-name', 'translation-glide');
+  await expect(page.locator('#transcriptTranslationFill')).toHaveCSS('animation-name', 'translation-sweep');
+  const sweep = await page.evaluate(() => {
+    const fill = document.getElementById('transcriptTranslationFill');
+    const track = document.getElementById('transcriptTranslationTrack').getBoundingClientRect();
+    const animation = fill.getAnimations()[0];
+    animation.pause();
+    const positions = [100, 400, 800, 1200, 1600, 2000].map(time => {
+      animation.currentTime = time;
+      return fill.getBoundingClientRect().left;
+    });
+    animation.currentTime = 0;
+    const start = fill.getBoundingClientRect();
+    animation.currentTime = 2199;
+    const end = fill.getBoundingClientRect();
+    return {positions, startsOffscreen: start.right <= track.left,
+      endsOffscreen: end.left >= track.right};
+  });
+  expect(sweep.positions.every((position, index) =>
+    index === 0 || position > sweep.positions[index - 1])).toBe(true);
+  expect(sweep.startsOffscreen).toBe(true);
+  expect(sweep.endsOffscreen).toBe(true);
   await expect(page.locator('#transcriptTranslationCount')).toHaveText('1/2 · 50%', {timeout: 7000});
-  await expect(page.locator('#transcriptTranslationFill')).toHaveCSS('transition-duration', '0.85s');
+  const springSamples = await page.evaluate(async () => {
+    const fill = document.getElementById('transcriptTranslationFill');
+    window.resetTranscriptProgressSpring();
+    fill.dataset.determinate = 'true';
+    window.moveTranscriptProgressTo(.5);
+    const samples = [];
+    for (let index = 0; index < 7; index++) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      samples.push(new DOMMatrixReadOnly(getComputedStyle(fill).transform).a);
+    }
+    return samples;
+  });
+  expect(springSamples.every((position, index) =>
+    index === 0 || position >= springSamples[index - 1])).toBe(true);
+  expect(springSamples.at(-1)).toBeGreaterThan(.48);
+  expect(springSamples.every(position => position <= .501)).toBe(true);
+  await page.screenshot({path: 'test-results/transcript-progress-motion.png', fullPage: true});
+  const nextChunkSamples = await page.evaluate(async () => {
+    const fill = document.getElementById('transcriptTranslationFill');
+    window.moveTranscriptProgressTo(.8);
+    const samples = [];
+    for (let index = 0; index < 7; index++) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      samples.push(new DOMMatrixReadOnly(getComputedStyle(fill).transform).a);
+    }
+    return samples;
+  });
+  expect(nextChunkSamples.every((position, index) =>
+    index === 0 || position >= nextChunkSamples[index - 1])).toBe(true);
+  expect(nextChunkSamples.at(-1)).toBeGreaterThan(.78);
+  expect(nextChunkSamples.every(position => position <= .801)).toBe(true);
   ready = true;
   await expect(page.locator('#transcriptBox')).toContainText('Deutsches Transkript', {timeout: 7000});
   await expect(page.locator('#transcriptTranslationProgress')).toBeHidden();
