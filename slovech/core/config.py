@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     aitunnel_api_key: SecretStr = SecretStr("")
     openrouter_api_key: SecretStr = SecretStr("")
     openrouter_models: str = ""
+    transcript_translation_models: str = "nvidia/nemotron-3.5-lightning:free"
     legal_enforcement: bool = False
     youtube_proxy: str = ""
     auth_max_age: int = 3600

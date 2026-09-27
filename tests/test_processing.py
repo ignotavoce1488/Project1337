@@ -78,6 +78,7 @@ async def test_transcript_translation_uses_separate_model_request(monkeypatch, s
 
     settings.openrouter_api_key = SecretStr("test-key")
     settings.openrouter_models = "nvidia/nemotron-test"
+    settings.transcript_translation_models = "nvidia/nemotron-test"
     monkeypatch.setattr("slovech.ai.services.get_settings", lambda: settings)
     requests = []
 
@@ -96,7 +97,34 @@ async def test_transcript_translation_uses_separate_model_request(monkeypatch, s
     assert result == "Der Dozent erklärt die Quantenphysik."
     assert len(requests) == 1
     assert requests[0]["max_tokens"] == 6144
+    assert requests[0]["reasoning"] == {"enabled": False}
     assert requests[0]["messages"][1]["content"] == "Преподаватель объясняет квантовую физику."
+
+
+async def test_transcript_translation_falls_back_when_light_model_fails(monkeypatch, settings):
+    import json
+
+    from slovech.ai.services import translate_transcription_chunk_with_openrouter
+
+    settings.openrouter_api_key = SecretStr("test-key")
+    settings.transcript_translation_models = "nvidia/nemotron-3.5-lightning:free"
+    settings.openrouter_models = "liquid/fallback-test"
+    monkeypatch.setattr("slovech.ai.services.get_settings", lambda: settings)
+    attempted = []
+
+    def respond(request):
+        model = json.loads(request.content)["model"]
+        attempted.append(model)
+        if model == settings.transcript_translation_models:
+            return httpx.Response(200, json={"error": {"message": "provider unavailable"}})
+        return httpx.Response(200, json={"choices": [{"finish_reason": "stop",
+            "message": {"content": "Die Vorlesung beginnt."}}]})
+
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr("slovech.ai.services.httpx.AsyncClient",
+                    lambda **kwargs: original_client(transport=httpx.MockTransport(respond), **kwargs))
+    assert await translate_transcription_chunk_with_openrouter("Лекция начинается.", "de") == "Die Vorlesung beginnt."
+    assert attempted == [settings.transcript_translation_models, settings.openrouter_models]
 
 
 async def process_queued_job(job, bot, repo):

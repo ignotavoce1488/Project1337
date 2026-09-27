@@ -261,17 +261,30 @@ async def process_job(job: dict, bot, repository: Repository):
             lecture.transcription_translation_language == target and lecture.transcription_translated
         ):
             return
-        chunks = translation_chunks(lecture.transcription, limit=4000)
+        chunks = translation_chunks(lecture.transcription, limit=job["payload"].get("chunk_limit", 4000))
         if not chunks:
             raise SummaryUnavailable("Transcript is empty")
-        translated_parts = []
-        for index, chunk in enumerate(chunks):
+        semaphore = asyncio.Semaphore(4)
+
+        async def translate_part(index: int, chunk: str) -> str:
             repository.ensure_processing_allowed(job)
             translated = await asyncio.to_thread(repository.get_transcription_part, job["id"], index)
-            if translated is None:
+            if translated is not None:
+                return translated
+            async with semaphore:
+                repository.ensure_processing_allowed(job)
                 translated = await translate_transcription_chunk_with_openrouter(chunk, target)
                 await asyncio.to_thread(repository.save_transcription_part, job["id"], index, translated)
-            translated_parts.append(translated)
+                return translated
+
+        tasks = [asyncio.create_task(translate_part(index, chunk)) for index, chunk in enumerate(chunks)]
+        try:
+            translated_parts = await asyncio.gather(*tasks)
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
         await asyncio.to_thread(
             repository.save_transcript_translation, job, "\n\n".join(translated_parts)
         )

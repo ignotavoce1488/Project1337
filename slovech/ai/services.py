@@ -334,6 +334,9 @@ def parse_summary(text: str) -> dict:
     return Summary.model_validate(json.loads(text)).model_dump()
 
 
+TRANSCRIPT_TRANSLATION_CHUNK_LIMIT = 6000
+
+
 def translation_chunks(markdown: str, limit: int = 5000) -> list[str]:
     """Split at paragraph boundaries so headings and lists survive translation."""
     chunks: list[str] = []
@@ -435,7 +438,9 @@ async def translate_transcription_chunk_with_openrouter(text: str, target_langua
         raise ValueError("Invalid transcript translation request")
     settings = get_settings()
     key = settings.openrouter_api_key.get_secret_value()
-    models = [model.strip() for model in settings.openrouter_models.split(",") if model.strip()]
+    models = list(dict.fromkeys(model.strip() for model in (
+        settings.transcript_translation_models + "," + settings.openrouter_models
+    ).split(",") if model.strip()))
     if not key or not models:
         raise SummaryUnavailable("OpenRouter translation provider is not configured")
     prompt = (
@@ -453,7 +458,8 @@ async def translate_transcription_chunk_with_openrouter(text: str, target_langua
                     json={"model": model, "messages": [
                         {"role": "system", "content": prompt},
                         {"role": "user", "content": text},
-                    ], "temperature": 0.1, "max_tokens": 6144},
+                    ], "temperature": 0.1, "max_tokens": 6144,
+                        "reasoning": {"enabled": False}},
                 )
                 choice = response.json()["choices"][0]
                 if choice.get("finish_reason") != "stop":

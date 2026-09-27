@@ -628,7 +628,7 @@ class Repository:
             return {"state": job["state"], "completed": completed, "total": total}
 
     def enqueue_transcript_translation(self, lecture_id: str, user_id: str, language: str) -> str | None:
-        from slovech.ai.services import translation_chunks
+        from slovech.ai.services import TRANSCRIPT_TRANSLATION_CHUNK_LIMIT, translation_chunks
 
         source = f"transcript_translation:{lecture_id}:{language}"
         now = time.time()
@@ -657,9 +657,12 @@ class Repository:
             existing = db.execute("SELECT id FROM jobs WHERE source=? AND user_id=?",
                                   (source, user_id)).fetchone()
             if existing:
+                total = len(translation_chunks(lecture.transcription, limit=TRANSCRIPT_TRANSLATION_CHUNK_LIMIT))
+                db.execute("DELETE FROM transcription_parts WHERE job_id=?", (existing["id"],))
                 db.execute(
-                    "UPDATE jobs SET state='pending',attempts=0,error=NULL,available=?,lease_until=NULL "
-                    "WHERE id=?", (now, existing["id"]),
+                    "UPDATE jobs SET state='pending',attempts=0,error=NULL,available=?,lease_until=NULL, "
+                    "payload=json_set(payload,'$.total_chunks',?,'$.chunk_limit',?) WHERE id=?",
+                    (now, total, TRANSCRIPT_TRANSLATION_CHUNK_LIMIT, existing["id"]),
                 )
                 return "pending"
             counts = db.execute(
@@ -668,12 +671,13 @@ class Repository:
             ).fetchone()
             if counts[0] >= self.settings.max_pending_jobs or counts[1] >= self.settings.max_user_jobs:
                 raise QueueFull()
-            total = len(translation_chunks(lecture.transcription, limit=4000))
+            total = len(translation_chunks(lecture.transcription, limit=TRANSCRIPT_TRANSLATION_CHUNK_LIMIT))
             db.execute(
                 "INSERT INTO jobs(id,source,user_id,payload,available,created) VALUES(?,?,?,?,?,?)",
                 (uuid.uuid4().hex, source, user_id,
                  json.dumps({"kind": "transcript_translation", "lecture_id": lecture_id,
-                             "target_language": language, "total_chunks": total}), now, now),
+                             "target_language": language, "total_chunks": total,
+                             "chunk_limit": TRANSCRIPT_TRANSLATION_CHUNK_LIMIT}), now, now),
             )
         return "pending"
 
