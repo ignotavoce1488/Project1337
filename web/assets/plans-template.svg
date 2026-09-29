@@ -1,31 +1,43 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="780" viewBox="0 0 1200 780">
-  <rect width="1200" height="780" fill="#18100e"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
+  <rect width="1200" height="800" fill="#f7f5f1"/>
 
-  <!-- The logo image is the same asset used in the Mini App. -->
-  <image x="64" y="43" width="262.6" height="79" href="__BRAND_IMAGE__"/>
-  <path d="M64 150H1136" stroke="#67463c" stroke-width="2"/>
+  <!-- Crop the exact Mini App mark; its light wordmark is redrawn for this light theme. -->
+  <svg x="62" y="44" width="61" height="61" viewBox="0 0 79 79">
+    <image width="262.6" height="79" href="__BRAND_IMAGE__"/>
+  </svg>
+  <text x="143" y="88" fill="#2d211e" font-family="Georgia,serif" font-size="32" font-weight="700">Конспектъ</text>
+  <path d="M62 128H1138" stroke="#d8d0c9" stroke-width="2"/>
 
-  <text x="600" y="231" fill="#f5e8d8" font-family="Arial,sans-serif" font-size="64" font-weight="700" text-anchor="middle" direction="auto">__HEADING__</text>
+  <text x="62" y="205" fill="#241b18" font-family="Arial,sans-serif" font-size="62" font-weight="700" direction="auto">__HEADING__</text>
+  <text x="62" y="252" fill="#665953" font-family="Arial,sans-serif" font-size="28" direction="auto">__INTRO__</text>
 
-  <path d="M64 273H1136M64 404H1136M64 535H1136M64 666H1136" stroke="#65483e" stroke-width="2"/>
-  <path d="M730 273V666" stroke="#65483e" stroke-width="2"/>
-  <rect x="64" y="406" width="1072" height="128" fill="#30201b"/>
-  <rect x="64" y="406" width="6" height="128" fill="#dd9c82"/>
+  <text x="76" y="332" fill="#2d211e" font-family="Arial,sans-serif" font-size="35" font-weight="700" direction="auto">__FREE__</text>
+  <text x="445" y="332" fill="#2d211e" font-family="Arial,sans-serif" font-size="35" font-weight="700" direction="auto">__SUBSCRIPTION__</text>
+  <text x="814" y="332" fill="#2d211e" font-family="Arial,sans-serif" font-size="35" font-weight="700" direction="auto">__HOURS__</text>
 
-  <text x="92" y="331" fill="#ad8878" font-family="Arial,sans-serif" font-size="23">01</text>
-  <text x="396" y="333" fill="#f5e8d8" font-family="Arial,sans-serif" font-size="44" font-weight="700" text-anchor="middle" direction="auto">__FREE__</text>
-  <text x="396" y="376" fill="#cbaea0" font-family="Arial,sans-serif" font-size="29" text-anchor="middle" direction="auto">__FREE_DETAIL__</text>
-  <text x="931" y="355" fill="#f5e8d8" font-family="Arial,sans-serif" font-size="58" font-weight="700" text-anchor="middle" direction="auto">__FREE_PRICE__</text>
+  <rect x="62" y="354" width="338" height="373" fill="#fffefd" stroke="#d9d0c9" stroke-width="2"/>
+  <rect x="431" y="354" width="338" height="373" fill="#a84231"/>
+  <rect x="800" y="354" width="338" height="373" fill="#fffefd" stroke="#d9d0c9" stroke-width="2"/>
 
-  <text x="92" y="462" fill="#dd9c82" font-family="Arial,sans-serif" font-size="23">02</text>
-  <text x="396" y="464" fill="#f5e8d8" font-family="Arial,sans-serif" font-size="44" font-weight="700" text-anchor="middle" direction="auto">__SUBSCRIPTION__</text>
-  <text x="396" y="507" fill="#e0b9a7" font-family="Arial,sans-serif" font-size="29" text-anchor="middle" direction="auto">__SUBSCRIPTION_DETAIL__</text>
-  <text x="931" y="486" fill="#f0b397" font-family="Arial,sans-serif" font-size="58" font-weight="700" text-anchor="middle" direction="auto">__SUBSCRIPTION_PRICE__</text>
+  <text x="88" y="451" fill="#241b18" font-family="Arial,sans-serif" font-size="63" font-weight="700" direction="auto">__FREE_PRICE__</text>
+  <text x="457" y="451" fill="#fff9f5" font-family="Arial,sans-serif" font-size="63" font-weight="700" direction="auto">__SUB_PRICE__</text>
+  <text x="826" y="451" fill="#241b18" font-family="Arial,sans-serif" font-size="59" font-weight="700" direction="auto">__HOUR_PRICE__</text>
 
-  <text x="92" y="593" fill="#ad8878" font-family="Arial,sans-serif" font-size="23">03</text>
-  <text x="396" y="595" fill="#f5e8d8" font-family="Arial,sans-serif" font-size="44" font-weight="700" text-anchor="middle" direction="auto">__HOURS__</text>
-  <text x="396" y="638" fill="#cbaea0" font-family="Arial,sans-serif" font-size="29" text-anchor="middle" direction="auto">__HOURS_DETAIL__</text>
-  <text x="931" y="617" fill="#f5e8d8" font-family="Arial,sans-serif" font-size="56" font-weight="700" text-anchor="middle" direction="auto">__HOURS_PRICE__</text>
+  <path d="M88 492H374M457 492H743M826 492H1112" stroke="#d9d0c9" stroke-width="2"/>
+  <path d="M457 492H743" stroke="#d78e7f" stroke-width="2"/>
 
-  <text x="600" y="731" fill="#d8ac98" font-family="Arial,sans-serif" font-size="31" text-anchor="middle" direction="auto">__EXAMPLE__</text>
+  <circle cx="102" cy="548" r="5" fill="#a84231"/>
+  <circle cx="102" cy="628" r="5" fill="#a84231"/>
+  <circle cx="471" cy="548" r="5" fill="#fff9f5"/>
+  <circle cx="471" cy="628" r="5" fill="#fff9f5"/>
+  <circle cx="840" cy="548" r="5" fill="#a84231"/>
+  <circle cx="840" cy="628" r="5" fill="#a84231"/>
+
+  <text x="122" y="559" fill="#382b27" font-family="Arial,sans-serif" font-size="28" direction="auto">__FREE_LINE1__</text>
+  <text x="122" y="639" fill="#382b27" font-family="Arial,sans-serif" font-size="28" direction="auto">__FREE_LINE2__</text>
+  <text x="491" y="559" fill="#fff9f5" font-family="Arial,sans-serif" font-size="28" direction="auto">__SUB_LINE1__</text>
+  <text x="491" y="639" fill="#fff9f5" font-family="Arial,sans-serif" font-size="28" direction="auto">__SUB_LINE2__</text>
+  <text x="860" y="559" fill="#382b27" font-family="Arial,sans-serif" font-size="28" direction="auto">__HOUR_LINE1__</text>
+  <text x="860" y="639" fill="#382b27" font-family="Arial,sans-serif" font-size="28" direction="auto">__HOUR_LINE2__</text>
+
 </svg>

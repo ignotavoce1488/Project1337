@@ -313,8 +313,11 @@ def billing_keyboard(language: str) -> InlineKeyboardMarkup:
 async def send_plans(message: Message, repository: Repository, user):
     locale = interface_language(repository, user)
     copy = BILLING_COPY.get(locale, BILLING_COPY["en"])
-    body = (f"💳 <b>{copy[0]}</b>\n\n"
-            f"🎁 {copy[1]}\n💠 {copy[2]}\n⏱ {copy[3]}\n\n<i>{copy[4]}</i>")
+    sections = []
+    for line in copy[1:4]:
+        title, separator, detail = line.partition(" — ")
+        sections.append(f"<b>{title}</b> — {detail}" if separator else line)
+    body = f"<b>{copy[0]}</b>\n\n" + "\n\n".join(sections) + f"\n\n<i>{copy[4]}</i>"
     status = await asyncio.to_thread(repository.billing_status, str(user.id))
     if status["unlimited"]:
         body += "\n\n♾ Безлимит активен для этого аккаунта." if locale == "ru" else (
@@ -378,7 +381,7 @@ async def handle_billing_menu(query: CallbackQuery, repository: Repository):
         await query.message.answer(body)
     elif action == "pricing":
         await query.answer()
-        await query.message.answer(f"{copy[3]}\n1.5 h = 70 ₽")
+        await query.message.answer(copy[3])
     else:
         await query.answer("Unknown option.", show_alert=True)
 
