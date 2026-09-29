@@ -3,12 +3,14 @@
 import asyncio
 import re
 import uuid
+from pathlib import Path
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.types import (
     BufferedInputFile,
     CallbackQuery,
+    FSInputFile,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
@@ -23,6 +25,80 @@ from slovech.core.storage import ProcessingCancelled, QueueFull, Repository
 from slovech.core.youtube import youtube_video_id
 
 router = Router()
+
+WELCOME_BANNER = Path(__file__).resolve().parents[2] / "web" / "assets" / "welcome.png"
+
+# title, description, first step, second step, ready hint, consent hint,
+# library button, language button, guide button, guide text
+WELCOME_COPY = {
+    "ru": ("Привет! Я Конспектъ 👋", "Превращаю записи в расшифровку и понятный конспект.",
+           "Пришли аудио, голосовое или ссылку на YouTube.", "Я сообщу, когда всё будет готово.",
+           "Конспекты, поиск и перевод — в твоей библиотеке.",
+           "Сначала прими документы в сообщении ниже.", "Мои конспекты", "Язык", "Как это работает",
+           "Пришли аудио, голосовое сообщение или ссылку на YouTube прямо в этот чат. "
+           "Когда обработка закончится, я пришлю конспект и кнопку для открытия. "
+           "В мини-приложении можно читать расшифровку, искать по записям, менять язык и скачать DOCX."),
+    "en": ("Hi, I'm Konspekt 👋", "I turn recordings into transcripts and clear notes.",
+           "Send audio, a voice message or a YouTube link.", "I'll let you know when it's ready.",
+           "Your notes, search and translations live in your library.",
+           "First, accept the documents in the message below.", "My notes", "Language", "How it works",
+           "Send audio, a voice message or a YouTube link right here. I'll send you the notes when processing finishes. "
+           "In the Mini App you can read the transcript, search recordings, change language and download DOCX."),
+    "es": ("¡Hola! Soy Konspekt 👋", "Convierto grabaciones en transcripciones y notas claras.",
+           "Envía audio, un mensaje de voz o un enlace de YouTube.", "Te avisaré cuando esté listo.",
+           "Tus notas, búsquedas y traducciones están en tu biblioteca.",
+           "Primero acepta los documentos del siguiente mensaje.", "Mis notas", "Idioma", "Cómo funciona",
+           "Envía audio, un mensaje de voz o un enlace de YouTube aquí. Te enviaré las notas cuando estén listas. "
+           "En la miniaplicación puedes leer la transcripción, buscar, cambiar el idioma y descargar DOCX."),
+    "fr": ("Bonjour, je suis Konspekt 👋", "Je transforme les enregistrements en transcriptions et notes claires.",
+           "Envoie un audio, un message vocal ou un lien YouTube.", "Je te préviendrai quand ce sera prêt.",
+           "Tes notes, recherches et traductions sont dans ta bibliothèque.",
+           "Accepte d'abord les documents dans le message ci-dessous.", "Mes notes", "Langue", "Mode d'emploi",
+           "Envoie un audio, un message vocal ou un lien YouTube ici. Je t'enverrai les notes une fois prêtes. "
+           "Dans la mini-app, tu peux lire la transcription, chercher, changer de langue et télécharger un DOCX."),
+    "de": ("Hallo, ich bin Konspekt 👋", "Ich mache aus Aufnahmen Transkripte und klare Notizen.",
+           "Sende Audio, eine Sprachnachricht oder einen YouTube-Link.", "Ich melde mich, wenn alles fertig ist.",
+           "Notizen, Suche und Übersetzungen findest du in deiner Bibliothek.",
+           "Bitte bestätige zuerst die Dokumente in der nächsten Nachricht.", "Meine Notizen", "Sprache", "So funktioniert's",
+           "Sende Audio, eine Sprachnachricht oder einen YouTube-Link hierher. Ich schicke dir die Notizen, sobald sie fertig sind. "
+           "In der Mini-App kannst du das Transkript lesen, suchen, die Sprache ändern und DOCX herunterladen."),
+    "it": ("Ciao, sono Konspekt 👋", "Trasformo registrazioni in trascrizioni e appunti chiari.",
+           "Invia un audio, un messaggio vocale o un link YouTube.", "Ti avviserò quando sarà pronto.",
+           "Appunti, ricerca e traduzioni sono nella tua raccolta.",
+           "Prima accetta i documenti nel messaggio qui sotto.", "I miei appunti", "Lingua", "Come funziona",
+           "Invia qui un audio, un messaggio vocale o un link YouTube. Ti manderò gli appunti appena pronti. "
+           "Nella mini app puoi leggere la trascrizione, cercare, cambiare lingua e scaricare il DOCX."),
+    "pt": ("Olá, sou o Konspekt 👋", "Transformo gravações em transcrições e notas claras.",
+           "Envie áudio, uma mensagem de voz ou um link do YouTube.", "Avisarei quando estiver pronto.",
+           "Notas, busca e traduções ficam na sua biblioteca.",
+           "Primeiro aceite os documentos na mensagem abaixo.", "Minhas notas", "Idioma", "Como funciona",
+           "Envie áudio, uma mensagem de voz ou um link do YouTube aqui. Enviarei as notas quando estiverem prontas. "
+           "No mini app você pode ler a transcrição, pesquisar, mudar o idioma e baixar DOCX."),
+    "tr": ("Merhaba, ben Konspekt 👋", "Kayıtları transkripte ve anlaşılır notlara dönüştürüyorum.",
+           "Ses dosyası, sesli mesaj veya YouTube bağlantısı gönder.", "Hazır olunca haber vereceğim.",
+           "Notların, arama ve çeviriler kitaplığında.",
+           "Önce aşağıdaki iletideki belgeleri kabul et.", "Notlarım", "Dil", "Nasıl çalışır",
+           "Bu sohbete ses dosyası, sesli mesaj veya YouTube bağlantısı gönder. Hazır olunca notları yollayacağım. "
+           "Mini uygulamada transkripti okuyabilir, arama yapabilir, dili değiştirebilir ve DOCX indirebilirsin."),
+    "ar": ("مرحباً، أنا كونسبكت 👋", "أحوّل التسجيلات إلى تفريغ وملخص واضح.",
+           "أرسل ملفاً صوتياً أو رسالة صوتية أو رابط يوتيوب.", "سأخبرك عندما يصبح جاهزاً.",
+           "ملخصاتك والبحث والترجمات في مكتبتك.",
+           "اقبل المستندات في الرسالة التالية أولاً.", "ملخصاتي", "اللغة", "كيف يعمل",
+           "أرسل ملفاً صوتياً أو رسالة صوتية أو رابط يوتيوب في هذه المحادثة. سأرسل الملخص عند اكتماله. "
+           "في التطبيق المصغر يمكنك قراءة التفريغ والبحث وتغيير اللغة وتنزيل DOCX."),
+    "hi": ("नमस्ते, मैं Konspekt हूँ 👋", "रिकॉर्डिंग से ट्रांसक्रिप्ट और साफ़ नोट्स बनाता हूँ।",
+           "ऑडियो, वॉइस मैसेज या YouTube लिंक भेजें।", "तैयार होने पर मैं बता दूँगा।",
+           "नोट्स, खोज और अनुवाद आपकी लाइब्रेरी में हैं।",
+           "पहले नीचे दिए संदेश में दस्तावेज़ स्वीकार करें।", "मेरे नोट्स", "भाषा", "कैसे काम करता है",
+           "यहीं ऑडियो, वॉइस मैसेज या YouTube लिंक भेजें। तैयार होने पर मैं नोट्स भेजूँगा। "
+           "मिनी ऐप में आप ट्रांसक्रिप्ट पढ़ सकते हैं, खोज सकते हैं, भाषा बदल सकते हैं और DOCX डाउनलोड कर सकते हैं।"),
+    "tk": ("Salam, men Konspekt 👋", "Ýazgylardan transkript we düşnükli bellikler taýýarlaýaryn.",
+           "Audio, ses habaryny ýa-da YouTube salgysyny iber.", "Taýýar bolanda habar bererin.",
+           "Bellikler, gözleg we terjimeler kitaphanaňda.",
+           "Ilki aşakdaky habardaky resminamalary kabul et.", "Belliklerim", "Dil", "Nähili işleýär",
+           "Şu çata audio, ses habaryny ýa-da YouTube salgysyny iber. Taýýar bolanda bellikleri ibererin. "
+           "Mini programmada transkripti okap, gözläp, dili üýtgedip we DOCX ýükläp alyp bolýar."),
+}
 
 
 def interface_language(repository: Repository, user) -> str:
@@ -61,8 +137,8 @@ async def save_language(query: CallbackQuery, repository: Repository):
     _, kind, code = ((query.data or "").split(":") + [""])[:3]
     if kind == "menu":
         await query.answer()
-        await query.message.edit_text("🌐 Interface language / Язык интерфейса",
-                                      reply_markup=language_keyboard())
+        await query.message.answer("🌐 Interface language / Язык интерфейса",
+                                   reply_markup=language_keyboard())
         return
     if kind != "interface" or code not in LANGUAGES:
         await query.answer("Invalid language.", show_alert=True)
@@ -75,7 +151,7 @@ async def save_language(query: CallbackQuery, repository: Repository):
         return
     await query.answer("Saved")
     await query.message.edit_text(f"✅ {LANGUAGES[code]}")
-    await send_welcome(query.message, repository.settings.domain, code)
+    await send_welcome(query.message, repository.settings.domain, code, compact=True)
 
 
 def is_admin(user) -> bool:
@@ -93,6 +169,9 @@ async def handle_start(message: Message, repository: Repository):
     if message.from_user:
         stage = await asyncio.to_thread(repository.legal_stage, str(message.from_user.id))
         if stage == "deleting" or (repository.settings.legal_enforcement and stage != "ready"):
+            if stage != "deleting":
+                await send_welcome(message, repository.settings.domain,
+                                   interface_language(repository, message.from_user), legal_pending=True)
             await send_legal_prompt(message, stage, repository.settings.domain)
             return
         await asyncio.to_thread(repository.touch, str(message.from_user.id))
@@ -170,36 +249,35 @@ async def handle_privacy(message: Message, repository: Repository):
     )
 
 
-async def send_welcome(message: Message, domain: str, language: str = "ru"):
-    texts = {
-        "ru": ("Открыть конспекты", "Отправьте аудио, голосовое сообщение или ссылку на YouTube. Конспект появится в вашем личном профиле."),
-        "en": ("Open notes", "Send audio, a voice message, or a YouTube link. Your notes will appear in your private library."),
-        "es": ("Abrir notas", "Envía audio, un mensaje de voz o un enlace de YouTube. Las notas aparecerán en tu biblioteca."),
-        "fr": ("Ouvrir les notes", "Envoyez un fichier audio, un message vocal ou un lien YouTube. Vos notes apparaîtront dans votre bibliothèque."),
-        "de": ("Notizen öffnen", "Sende Audio, eine Sprachnachricht oder einen YouTube-Link. Deine Notizen erscheinen in deiner Bibliothek."),
-        "it": ("Apri appunti", "Invia un audio, un messaggio vocale o un link YouTube. Gli appunti appariranno nella tua raccolta."),
-        "pt": ("Abrir notas", "Envie um áudio, uma mensagem de voz ou um link do YouTube. As notas aparecerão na sua biblioteca."),
-        "tr": ("Notları aç", "Ses dosyası, sesli mesaj veya YouTube bağlantısı gönderin. Notlarınız kitaplığınızda görünecek."),
-        "ar": ("افتح الملخصات", "أرسل ملفاً صوتياً أو رسالة صوتية أو رابط يوتيوب. ستظهر ملخصاتك في مكتبتك."),
-        "hi": ("नोट्स खोलें", "ऑडियो, वॉइस मैसेज या YouTube लिंक भेजें। नोट्स आपकी लाइब्रेरी में दिखेंगे।"),
-        "tk": ("Bellikleri aç", "Audio, ses habaryny ýa-da YouTube salgysyny iberiň. Bellikler kitaphanaňyzda peýda bolar."),
-    }
-    label, body = texts.get(language, texts["en"])
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=label,
-                    web_app=WebAppInfo(url=f"{domain}/app?v=13"),
-                )
-            ],
-            [InlineKeyboardButton(text="🌐 Language / Язык", callback_data="language:menu:interface")],
-        ]
+async def send_welcome(message: Message, domain: str, language: str = "ru", *,
+                       legal_pending: bool = False, compact: bool = False):
+    title, description, first, second, ready_hint, consent_hint, library, lang, guide, _ = (
+        WELCOME_COPY.get(language, WELCOME_COPY["en"])
     )
-    await message.answer(
-        body + "\n\n/language",
-        reply_markup=keyboard,
+    caption = (f"<b>{title}</b>\n{description}\n\n"
+               f"① {first}\n② {second}\n\n"
+               f"<i>{consent_hint if legal_pending else ready_hint}</i>")
+    keyboard = None if legal_pending else InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"📚 {library}", web_app=WebAppInfo(url=f"{domain}/app?v=13"))],
+        [InlineKeyboardButton(text=f"🌐 {lang}", callback_data="language:menu:interface"),
+         InlineKeyboardButton(text=f"❔ {guide}", callback_data="welcome:guide")],
+    ])
+    if compact:
+        await message.answer(f"✅ {ready_hint}", reply_markup=keyboard)
+        return
+    await message.answer_photo(
+        FSInputFile(WELCOME_BANNER), caption=caption, parse_mode="HTML", reply_markup=keyboard,
     )
+
+
+@router.callback_query(F.data == "welcome:guide")
+async def show_welcome_guide(query: CallbackQuery, repository: Repository):
+    if not query.message or query.message.chat.type != "private" or query.message.chat.id != query.from_user.id:
+        await query.answer("Open this in a private chat.", show_alert=True)
+        return
+    language = interface_language(repository, query.from_user)
+    await query.answer()
+    await query.message.answer("🎙 " + WELCOME_COPY.get(language, WELCOME_COPY["en"])[-1])
 
 
 async def send_legal_prompt(message: Message, stage: str, domain: str):
@@ -285,7 +363,7 @@ async def handle_legal_choice(query: CallbackQuery, bot: Bot, repository: Reposi
         await send_legal_prompt(query.message, "consent", repository.settings.domain)
     else:
         await send_welcome(query.message, repository.settings.domain,
-                           await ensure_interface_language(repository, query.from_user))
+                           await ensure_interface_language(repository, query.from_user), compact=True)
 
 
 @router.message(Command("admin"))

@@ -5,13 +5,15 @@ import pytest
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import EditMessageText
 
+from slovech.bot import register_bot_commands
 from slovech.bot_handlers.handlers import (
     handle_download_docx,
     handle_privacy,
+    handle_start,
     is_admin,
+    save_language,
     send_welcome,
 )
-from slovech.bot import register_bot_commands
 from slovech.core.runtime import process_lock
 from slovech.worker import notify
 
@@ -35,15 +37,63 @@ async def test_callback_denies_other_owner(repo, lecture):
 
 
 async def test_welcome_and_privacy_command_do_not_expose_documents_or_contact(repo):
-    message = SimpleNamespace(answer=AsyncMock())
+    message = SimpleNamespace(answer=AsyncMock(), answer_photo=AsyncMock())
     await send_welcome(message, "https://example.test")
-    welcome = message.answer.await_args.args[0]
+    welcome = message.answer_photo.await_args.kwargs["caption"]
     assert "/legal/" not in welcome
     assert "gmail" not in welcome
     await handle_privacy(message, repo)
     privacy = message.answer.await_args.args[0]
     assert "/legal/" not in privacy
     assert "gmail" not in privacy
+
+
+async def test_welcome_photo_is_localized_and_has_working_actions():
+    from slovech.bot_handlers.handlers import WELCOME_BANNER
+    from slovech.core.languages import LANGUAGES
+
+    assert WELCOME_BANNER.is_file()
+    assert WELCOME_BANNER.stat().st_size < 10 * 1024 * 1024
+    message = SimpleNamespace(answer=AsyncMock(), answer_photo=AsyncMock())
+    for language in LANGUAGES:
+        await send_welcome(message, "https://example.test", language)
+        kwargs = message.answer_photo.await_args.kwargs
+        assert kwargs["parse_mode"] == "HTML"
+        assert len(kwargs["caption"]) < 1024
+        buttons = kwargs["reply_markup"].inline_keyboard
+        assert buttons[0][0].web_app.url == "https://example.test/app?v=13"
+        assert buttons[1][0].callback_data == "language:menu:interface"
+        assert buttons[1][1].callback_data == "welcome:guide"
+
+
+async def test_start_shows_intro_before_consent_and_no_app_button(repo):
+    repo.settings.legal_enforcement = True
+    events = []
+
+    async def photo(*args, **kwargs):
+        events.append(("photo", kwargs))
+
+    async def text(*args, **kwargs):
+        events.append(("text", kwargs))
+
+    message = SimpleNamespace(
+        chat=SimpleNamespace(type="private"), from_user=SimpleNamespace(id=123, language_code="ru"),
+        answer_photo=AsyncMock(side_effect=photo), answer=AsyncMock(side_effect=text),
+    )
+    await handle_start(message, repo)
+    assert [event[0] for event in events] == ["photo", "text"]
+    assert events[0][1]["reply_markup"] is None
+    assert "документы" in events[0][1]["caption"]
+
+
+async def test_language_menu_can_open_from_photo(repo):
+    message = SimpleNamespace(chat=SimpleNamespace(type="private", id=123),
+                              answer=AsyncMock(), edit_text=AsyncMock())
+    query = SimpleNamespace(data="language:menu:interface", message=message,
+                            from_user=SimpleNamespace(id=123), answer=AsyncMock())
+    await save_language(query, repo)
+    message.answer.assert_awaited_once()
+    message.edit_text.assert_not_called()
 
 
 async def test_slash_menu_registers_language_command():
