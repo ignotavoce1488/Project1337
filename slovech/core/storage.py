@@ -167,6 +167,9 @@ class Repository:
                 CREATE TABLE IF NOT EXISTS billing_prompts (
                     user_id TEXT PRIMARY KEY, created REAL NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS billing_unlimited (
+                    user_id TEXT PRIMARY KEY, granted_at REAL NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS deletion_audit (
                     id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
                     requested_at REAL NOT NULL, deleted_at REAL NOT NULL,
@@ -239,12 +242,34 @@ class Repository:
                 "WHERE user_id=? AND (expires IS NULL OR expires>?) GROUP BY kind",
                 (user_id, now),
             ).fetchall()
+            unlimited = db.execute(
+                "SELECT 1 FROM billing_unlimited WHERE user_id=?", (user_id,)
+            ).fetchone() is not None
         balances = dict(grants)
         return {
+            "unlimited": unlimited,
             "free_remaining": max(0, FREE_JOBS_PER_WINDOW - free_used),
             "subscription_seconds": balances.get("subscription", 0),
             "pack_seconds": balances.get("pack", 0),
         }
+
+    def grant_unlimited(self, user_id: str) -> bool:
+        """Grant a permanent billing exemption to one verified Telegram user ID."""
+        if not user_id.isdecimal() or int(user_id) <= 0:
+            raise ValueError("A numeric Telegram user ID is required")
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self._require_not_deleting(db, user_id)
+            return bool(db.execute(
+                "INSERT OR IGNORE INTO billing_unlimited(user_id,granted_at) VALUES(?,?)",
+                (user_id, time.time()),
+            ).rowcount)
+
+    def is_unlimited(self, user_id: str) -> bool:
+        with self.connection() as db:
+            return db.execute(
+                "SELECT 1 FROM billing_unlimited WHERE user_id=?", (user_id,)
+            ).fetchone() is not None
 
     def grant_paid_time(self, user_id: str, payment_id: str, kind: str, seconds: int,
                         *, now: float | None = None) -> bool:
@@ -294,6 +319,8 @@ class Repository:
 
     @staticmethod
     def _allocate_billing(db, job_id: str, user_id: str, now: float):
+        if db.execute("SELECT 1 FROM billing_unlimited WHERE user_id=?", (user_id,)).fetchone():
+            return
         used = db.execute(
             "SELECT COUNT(*) FROM billing_usage WHERE user_id=? AND kind='free' "
             "AND state IN ('reserved','used') AND created>=?",

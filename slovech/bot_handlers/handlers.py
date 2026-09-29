@@ -296,10 +296,21 @@ async def send_plans(message: Message, repository: Repository, user):
     locale = interface_language(repository, user)
     copy = BILLING_COPY.get(locale, BILLING_COPY["en"])
     body = f"💳 <b>{copy[0]}</b>\n\n• {copy[1]}\n• {copy[2]}\n• {copy[3]}\n\n{copy[4]}"
-    if repository.settings.billing_enforcement:
-        status = await asyncio.to_thread(repository.billing_status, str(user.id))
+    status = await asyncio.to_thread(repository.billing_status, str(user.id))
+    if status["unlimited"]:
+        body += "\n\n♾ Безлимит активен для этого аккаунта." if locale == "ru" else (
+            "\n\n♾ Unlimited access is active for this account."
+        )
+    elif repository.settings.billing_enforcement:
         body += f"\n\n{copy[11].format(count=status['free_remaining'])}"
-    await message.answer(body, parse_mode="HTML", reply_markup=billing_keyboard(locale))
+    await message.answer(body, parse_mode="HTML",
+                         reply_markup=None if status["unlimited"] else billing_keyboard(locale))
+
+
+@router.message(Command("myid"))
+async def show_telegram_id(message: Message):
+    if message.chat.type == "private" and message.from_user:
+        await message.answer(f"Ваш Telegram ID: <code>{message.from_user.id}</code>", parse_mode="HTML")
 
 
 @router.message(Command("plans", "tariffs"))

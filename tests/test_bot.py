@@ -100,7 +100,7 @@ async def test_slash_menu_registers_language_command():
     bot = AsyncMock()
     await register_bot_commands(bot)
     commands = bot.set_my_commands.await_args.args[0]
-    assert {item.command for item in commands} >= {"start", "language"}
+    assert {item.command for item in commands} >= {"start", "language", "plans", "myid"}
 
 
 async def test_callback_path_traversal_denied(repo):

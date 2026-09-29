@@ -3,7 +3,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from slovech.bot_handlers.handlers import handle_billing_menu, handle_youtube_link, send_plans
+from slovech.bot_handlers.handlers import (
+    handle_billing_menu,
+    handle_youtube_link,
+    send_plans,
+    show_telegram_id,
+)
 from slovech.core.billing import format_hours, pack_price_rub, parse_pack_minutes
 from slovech.core.billing_copy import BILLING_COPY
 from slovech.core.privacy import erase_user_rows
@@ -85,6 +90,26 @@ def test_subscription_expires_and_erasure_removes_billing_rows(repo):
     assert not repo.awaiting_pack_amount("123")
 
 
+def test_unlimited_exemption_is_permanent_and_ignores_all_metered_limits(repo):
+    repo.settings.billing_enforcement = True
+    with pytest.raises(ValueError):
+        repo.grant_unlimited("@someone")
+    assert repo.grant_unlimited("123")
+    assert not repo.grant_unlimited("123")
+    assert repo.is_unlimited("123")
+    for i in range(5):
+        assert repo.enqueue(f"unlimited{i}", f"unlimited-source{i}", "123", {"kind": "audio"})
+        job = repo.claim()
+        repo.reserve_duration(job["id"], "123", 3 * 3600)
+        repo.finish(job)
+    assert repo.billing_status("123")["unlimited"]
+    assert repo.billing_status("123")["free_remaining"] == 2
+    assert not repo.is_unlimited("456")
+    with repo.connection() as db:
+        erase_user_rows(db, "123")
+    assert not repo.is_unlimited("123")
+
+
 async def test_bot_tariff_menu_and_fractional_quote(repo):
     message = SimpleNamespace(answer=AsyncMock(), chat=SimpleNamespace(id=123, type="private"))
     user = SimpleNamespace(id=123, language_code="ru")
@@ -99,3 +124,15 @@ async def test_bot_tariff_menu_and_fractional_quote(repo):
     await handle_youtube_link(text, repo)
     assert "70 ₽" in text.answer.await_args.args[0]
     assert not repo.awaiting_pack_amount("123")
+
+
+async def test_unlimited_status_and_myid_command(repo):
+    repo.grant_unlimited("123")
+    user = SimpleNamespace(id=123, language_code="ru")
+    message = SimpleNamespace(answer=AsyncMock(), chat=SimpleNamespace(id=123, type="private"),
+                              from_user=user)
+    await send_plans(message, repo, user)
+    assert "Безлимит активен" in message.answer.await_args.args[0]
+    assert message.answer.await_args.kwargs["reply_markup"] is None
+    await show_telegram_id(message)
+    assert "123" in message.answer.await_args.args[0]
