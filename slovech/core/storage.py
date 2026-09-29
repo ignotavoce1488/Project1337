@@ -10,6 +10,11 @@ import time
 import uuid
 from contextlib import contextmanager
 
+from slovech.core.billing import (
+    FREE_JOBS_PER_WINDOW,
+    FREE_WINDOW_SECONDS,
+    SUBSCRIPTION_PERIOD_SECONDS,
+)
 from slovech.core.config import Settings
 from slovech.core.legal import archived_snapshots, document_snapshot, document_version
 from slovech.core.models import Lecture
@@ -17,6 +22,10 @@ from slovech.core.models import Lecture
 
 class QueueFull(Exception):
     pass
+
+
+class BillingRequired(Exception):
+    """The free allowance is exhausted and no paid time is available."""
 
 
 class ProcessingCancelled(Exception):
@@ -143,6 +152,21 @@ class Repository:
                 CREATE TABLE IF NOT EXISTS user_preferences (
                     user_id TEXT PRIMARY KEY, interface_language TEXT NOT NULL DEFAULT 'ru'
                 );
+                CREATE TABLE IF NOT EXISTS billing_grants (
+                    payment_id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+                    kind TEXT NOT NULL, seconds_remaining INTEGER NOT NULL,
+                    created REAL NOT NULL, expires REAL
+                );
+                CREATE INDEX IF NOT EXISTS billing_grants_owner ON billing_grants(user_id, expires);
+                CREATE TABLE IF NOT EXISTS billing_usage (
+                    job_id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+                    kind TEXT NOT NULL, state TEXT NOT NULL, seconds INTEGER NOT NULL DEFAULT 0,
+                    grant_id TEXT, created REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS billing_usage_owner ON billing_usage(user_id, kind, state, created);
+                CREATE TABLE IF NOT EXISTS billing_prompts (
+                    user_id TEXT PRIMARY KEY, created REAL NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS deletion_audit (
                     id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
                     requested_at REAL NOT NULL, deleted_at REAL NOT NULL,
@@ -201,6 +225,143 @@ class Repository:
             )
             db.execute("UPDATE user_preferences SET interface_language=? WHERE user_id=?",
                        (interface_language, user_id))
+
+    def billing_status(self, user_id: str, *, now: float | None = None) -> dict:
+        now = time.time() if now is None else now
+        with self.connection() as db:
+            free_used = db.execute(
+                "SELECT COUNT(*) FROM billing_usage WHERE user_id=? AND kind='free' "
+                "AND state IN ('reserved','used') AND created>=?",
+                (user_id, now - FREE_WINDOW_SECONDS),
+            ).fetchone()[0]
+            grants = db.execute(
+                "SELECT kind,COALESCE(SUM(seconds_remaining),0) FROM billing_grants "
+                "WHERE user_id=? AND (expires IS NULL OR expires>?) GROUP BY kind",
+                (user_id, now),
+            ).fetchall()
+        balances = dict(grants)
+        return {
+            "free_remaining": max(0, FREE_JOBS_PER_WINDOW - free_used),
+            "subscription_seconds": balances.get("subscription", 0),
+            "pack_seconds": balances.get("pack", 0),
+        }
+
+    def grant_paid_time(self, user_id: str, payment_id: str, kind: str, seconds: int,
+                        *, now: float | None = None) -> bool:
+        """Future verified-payment handler can call this idempotently."""
+        if kind not in {"subscription", "pack"} or seconds <= 0 or not payment_id:
+            raise ValueError("Invalid paid entitlement")
+        if kind == "subscription" and seconds != 40 * 3600:
+            raise ValueError("Subscription must grant 40 hours")
+        if kind == "pack" and not 3600 <= seconds <= 4 * 3600:
+            raise ValueError("Hour pack must grant 1–4 hours")
+        now = time.time() if now is None else now
+        expires = now + SUBSCRIPTION_PERIOD_SECONDS if kind == "subscription" else None
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self._require_not_deleting(db, user_id)
+            existing = db.execute(
+                "SELECT user_id,kind,seconds_remaining FROM billing_grants WHERE payment_id=?",
+                (payment_id,),
+            ).fetchone()
+            if existing:
+                if existing["user_id"] != user_id or existing["kind"] != kind:
+                    raise ValueError("Payment ID already belongs to another purchase")
+                return False
+            db.execute(
+                "INSERT INTO billing_grants VALUES(?,?,?,?,?,?)",
+                (payment_id, user_id, kind, seconds, now, expires),
+            )
+        return True
+
+    def expect_pack_amount(self, user_id: str):
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self._require_not_deleting(db, user_id)
+            db.execute(
+                "INSERT INTO billing_prompts VALUES(?,?) ON CONFLICT(user_id) "
+                "DO UPDATE SET created=excluded.created", (user_id, time.time()),
+            )
+
+    def awaiting_pack_amount(self, user_id: str) -> bool:
+        with self.connection() as db:
+            row = db.execute("SELECT created FROM billing_prompts WHERE user_id=?", (user_id,)).fetchone()
+        return bool(row and row[0] > time.time() - 600)
+
+    def clear_pack_amount_prompt(self, user_id: str):
+        with self.connection() as db:
+            db.execute("DELETE FROM billing_prompts WHERE user_id=?", (user_id,))
+
+    @staticmethod
+    def _allocate_billing(db, job_id: str, user_id: str, now: float):
+        used = db.execute(
+            "SELECT COUNT(*) FROM billing_usage WHERE user_id=? AND kind='free' "
+            "AND state IN ('reserved','used') AND created>=?",
+            (user_id, now - FREE_WINDOW_SECONDS),
+        ).fetchone()[0]
+        kind = "free"
+        if used >= FREE_JOBS_PER_WINDOW:
+            available = db.execute(
+                "SELECT 1 FROM billing_grants WHERE user_id=? AND seconds_remaining>0 "
+                "AND (expires IS NULL OR expires>?) LIMIT 1", (user_id, now),
+            ).fetchone()
+            if not available:
+                raise BillingRequired()
+            kind = "pending_paid"
+        db.execute(
+            "INSERT INTO billing_usage(job_id,user_id,kind,state,created) VALUES(?,?,?,?,?)",
+            (job_id, user_id, kind, "reserved", now),
+        )
+
+    def reserve_duration(self, job_id: str, user_id: str, seconds: int):
+        """Charge measured media duration before AI work; retries keep the same reservation."""
+        if seconds <= 0:
+            raise ValueError("Duration must be positive")
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self._require_not_deleting(db, user_id)
+            active = db.execute(
+                "SELECT 1 FROM jobs WHERE id=? AND user_id=? AND state='running'",
+                (job_id, user_id),
+            ).fetchone()
+            if not active:
+                raise ProcessingCancelled()
+            row = db.execute("SELECT kind,seconds,state FROM billing_usage WHERE job_id=? AND user_id=?",
+                             (job_id, user_id)).fetchone()
+            if not row or row["kind"] == "free" or row["seconds"]:
+                return
+            now = time.time()
+            grant = db.execute(
+                "SELECT payment_id,kind FROM billing_grants WHERE user_id=? AND seconds_remaining>=? "
+                "AND (expires IS NULL OR expires>?) ORDER BY COALESCE(expires, 1e20),created LIMIT 1",
+                (user_id, seconds, now),
+            ).fetchone()
+            if not grant:
+                raise BillingRequired()
+            db.execute("UPDATE billing_grants SET seconds_remaining=seconds_remaining-? WHERE payment_id=?",
+                       (seconds, grant["payment_id"]))
+            db.execute("UPDATE billing_usage SET kind=?,seconds=?,grant_id=? WHERE job_id=?",
+                       (grant["kind"], seconds, grant["payment_id"], job_id))
+
+    def needs_paid_duration(self, job_id: str) -> bool:
+        with self.connection() as db:
+            row = db.execute("SELECT kind,seconds FROM billing_usage WHERE job_id=?", (job_id,)).fetchone()
+        return bool(row and row["kind"] == "pending_paid" and row["seconds"] == 0)
+
+    @staticmethod
+    def _settle_billing(db, job_id: str, succeeded: bool):
+        row = db.execute(
+            "SELECT grant_id,seconds FROM billing_usage WHERE job_id=? AND state='reserved'", (job_id,)
+        ).fetchone()
+        if not row:
+            return
+        if succeeded:
+            db.execute("UPDATE billing_usage SET state='used' WHERE job_id=?", (job_id,))
+        else:
+            if row["grant_id"]:
+                db.execute("UPDATE billing_grants SET seconds_remaining=seconds_remaining+? WHERE payment_id=?",
+                           (row["seconds"], row["grant_id"]))
+            db.execute("UPDATE billing_usage SET state='released' WHERE job_id=?", (job_id,))
 
     def legal_stage(self, user_id: str) -> str:
         """Return the first document the user has not accepted in its current version."""
@@ -728,6 +889,8 @@ class Repository:
             ):
                 raise QueueFull()
             now = time.time()
+            if self.settings.billing_enforcement:
+                self._allocate_billing(db, job_id, user_id, now)
             db.execute(
                 "INSERT INTO jobs(id,source,user_id,payload,available,created) VALUES(?,?,?,?,?,?)",
                 (job_id, source, user_id, json.dumps(payload), now, now),
@@ -743,6 +906,13 @@ class Repository:
         now = time.time()
         with self.connection() as db:
             db.execute("BEGIN IMMEDIATE")
+            expired = db.execute(
+                "SELECT id FROM jobs WHERE state='running' AND lease_until<? AND attempts>=3",
+                (now,),
+            ).fetchall()
+            for item in expired:
+                completed = db.execute("SELECT 1 FROM lectures WHERE id=?", (item[0],)).fetchone()
+                self._settle_billing(db, item[0], bool(completed))
             db.execute(
                 "UPDATE jobs SET state='failed',error='Worker lease expired' WHERE state='running' AND lease_until<? AND attempts>=3",
                 (now,),
@@ -766,16 +936,27 @@ class Repository:
             else ("failed" if terminal or job["attempts"] >= 3 else "pending")
         )
         with self.connection() as db:
-            db.execute(
+            changed = db.execute(
                 "UPDATE jobs SET state=?,error=?,available=?,lease_until=NULL WHERE id=? AND state='running' AND attempts=?",
                 (state, error, time.time() + 30 * job["attempts"], job["id"], job["attempts"]),
-            )
-            if state in {"done", "failed"}:
+            ).rowcount
+            if changed and state in {"done", "failed"}:
+                completed = state == "done" or bool(db.execute(
+                    "SELECT 1 FROM lectures WHERE id=?", (job["id"],)
+                ).fetchone())
+                self._settle_billing(db, job["id"], completed)
                 db.execute("DELETE FROM transcription_parts WHERE job_id=?", (job["id"],))
 
     def recover_running(self):
         """Called only while holding the exclusive worker process lock."""
         with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            failed = db.execute(
+                "SELECT id FROM jobs WHERE state='running' AND attempts>=3"
+            ).fetchall()
+            for item in failed:
+                completed = db.execute("SELECT 1 FROM lectures WHERE id=?", (item[0],)).fetchone()
+                self._settle_billing(db, item[0], bool(completed))
             db.execute(
                 "UPDATE jobs SET state=CASE WHEN attempts>=3 THEN 'failed' ELSE 'pending' END, available=0, lease_until=NULL WHERE state='running'"
             )

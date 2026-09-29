@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import math
 import signal
 import time
 from datetime import UTC, datetime
@@ -35,9 +36,9 @@ from slovech.core.models import Lecture
 from slovech.core.privacy import clean_crash_residue, complete_deletions, sweep_retention
 from slovech.core.process import run_process
 from slovech.core.runtime import process_lock
-from slovech.core.storage import ProcessingCancelled, Repository
+from slovech.core.storage import BillingRequired, ProcessingCancelled, Repository
 from slovech.core.telegram import create_bot
-from slovech.core.youtube import download_youtube_audio, fetch_youtube_transcript
+from slovech.core.youtube import download_youtube_audio, fetch_youtube_transcript, youtube_duration
 
 logger = logging.getLogger(__name__)
 # Split by duration even when the compressed file fits: providers may reject
@@ -324,6 +325,10 @@ async def process_job(job: dict, bot, repository: Repository):
     try:
         transcription = None
         if payload["kind"] == "youtube":
+            if repository.needs_paid_duration(job["id"]):
+                duration = await youtube_duration(payload["url"])
+                await asyncio.to_thread(repository.reserve_duration, job["id"], job["user_id"],
+                                        math.ceil(duration))
             transcription = await fetch_youtube_transcript(payload["video_id"], payload.get("language_hint"))
             if not transcription:
                 await download_youtube_audio(payload["url"], str(raw))
@@ -370,6 +375,8 @@ async def process_job(job: dict, bot, repository: Repository):
             duration = float(json.loads(probe)["format"]["duration"])
             if not 0 < duration <= settings.max_audio_seconds:
                 raise ValueError("Audio exceeds duration limit")
+            await asyncio.to_thread(repository.reserve_duration, job["id"], job["user_id"],
+                                    math.ceil(duration))
             await run_process(
                 "ffmpeg",
                 "-nostdin",
@@ -550,7 +557,7 @@ async def run_worker(stop: asyncio.Event):
                 # Never store provider response bodies, tokens or transcript contents in logs.
                 error = type(exc).__name__
                 logger.error("Job failed id=%s type=%s", job["id"], error)
-                terminal = isinstance(exc, (SummaryUnavailable, LegalAcceptanceRequired))
+                terminal = isinstance(exc, (SummaryUnavailable, LegalAcceptanceRequired, BillingRequired))
                 await asyncio.to_thread(repository.finish, job, error, terminal=terminal)
                 if job["payload"].get("kind") not in {"translation", "transcript_translation"} and (
                     terminal or job["attempts"] >= 3
@@ -563,6 +570,8 @@ async def run_worker(stop: asyncio.Event):
                         failure_text = (
                             f"Не удалось создать конспект через OpenRouter. Код: {job['id'][:8]}"
                         )
+                    elif isinstance(exc, BillingRequired):
+                        failure_text = "Не хватает оплаченного времени. Проверьте тарифы через /plans."
                     else:
                         failure_text = f"Не удалось обработать запись. Повторите отправку. Код: {job['id'][:8]}"
                     try:

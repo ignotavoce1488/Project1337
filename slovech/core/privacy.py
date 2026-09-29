@@ -38,6 +38,9 @@ def erase_user_rows(db: sqlite3.Connection, user_id: str, *, keep_request: bool 
         "legal_events",
         "user_activity",
         "user_preferences",
+        "billing_grants",
+        "billing_usage",
+        "billing_prompts",
         "deletion_confirmations",
         "temporary_media",
     ]

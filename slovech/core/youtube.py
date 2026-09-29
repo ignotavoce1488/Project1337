@@ -72,6 +72,25 @@ async def download_youtube_audio(url: str, output_path: str) -> None:
     )
 
 
+async def youtube_duration(url: str) -> float:
+    """Read duration before metered transcript processing, including caption-only videos."""
+    video = youtube_video_id(url)
+    settings = get_settings()
+    args = [sys.executable, "-m", "yt_dlp", "--ignore-config", "--no-cache-dir",
+            "--no-playlist", "--skip-download", "--quiet", "--no-warnings",
+            "--socket-timeout", "20", "--print", "duration"]
+    if settings.youtube_proxy:
+        args.extend(["--proxy", settings.youtube_proxy])
+    output = await run_process(*args, f"https://www.youtube.com/watch?v={video}", timeout=60)
+    try:
+        duration = float(output.decode().strip().splitlines()[-1])
+    except (ValueError, IndexError) as exc:
+        raise ValueError("Video duration is unavailable") from exc
+    if not 0 < duration <= settings.max_audio_seconds:
+        raise ValueError("Video exceeds duration limit")
+    return duration
+
+
 async def fetch_youtube_transcript(video_id: str, language_hint: str | None = None) -> str | None:
     if not VIDEO_ID.fullmatch(video_id):
         raise ValueError("Invalid video ID")

@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     openrouter_models: str = ""
     transcript_translation_models: str = "nvidia/nemotron-3.5-lightning:free"
     legal_enforcement: bool = False
+    billing_enforcement: bool = False
     youtube_proxy: str = ""
     auth_max_age: int = 3600
     max_upload_bytes: int = 300 * 1024 * 1024

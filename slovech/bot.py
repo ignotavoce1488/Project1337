@@ -19,6 +19,7 @@ async def register_bot_commands(bot):
     await bot.set_my_commands([
         BotCommand(command="start", description="Открыть бота"),
         BotCommand(command="language", description="Выбрать язык / Choose language"),
+        BotCommand(command="plans", description="Тарифы и часы разбора"),
         BotCommand(command="privacy", description="Условия и конфиденциальность"),
         BotCommand(command="delete_me", description="Удалить мои данные"),
     ])

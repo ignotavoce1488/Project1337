@@ -17,11 +17,13 @@ from aiogram.types import (
     WebAppInfo,
 )
 
+from slovech.core.billing import format_hours, pack_price_rub, parse_pack_minutes
+from slovech.core.billing_copy import BILLING_COPY
 from slovech.core.config import SAFE_ID_REGEX, get_settings
 from slovech.core.documents import render_docx
 from slovech.core.languages import LANGUAGES, bot_copy, normalize_language
 from slovech.core.legal import document_version, public_url
-from slovech.core.storage import ProcessingCancelled, QueueFull, Repository
+from slovech.core.storage import BillingRequired, ProcessingCancelled, QueueFull, Repository
 from slovech.core.youtube import youtube_video_id
 
 router = Router()
@@ -261,6 +263,8 @@ async def send_welcome(message: Message, domain: str, language: str = "ru", *,
         [InlineKeyboardButton(text=f"📚 {library}", web_app=WebAppInfo(url=f"{domain}/app?v=13"))],
         [InlineKeyboardButton(text=f"🌐 {lang}", callback_data="language:menu:interface"),
          InlineKeyboardButton(text=f"❔ {guide}", callback_data="welcome:guide")],
+        [InlineKeyboardButton(text=f"💳 {BILLING_COPY.get(language, BILLING_COPY['en'])[0]}",
+                              callback_data="billing:plans")],
     ])
     if compact:
         await message.answer(f"✅ {ready_hint}", reply_markup=keyboard)
@@ -278,6 +282,55 @@ async def show_welcome_guide(query: CallbackQuery, repository: Repository):
     language = interface_language(repository, query.from_user)
     await query.answer()
     await query.message.answer("🎙 " + WELCOME_COPY.get(language, WELCOME_COPY["en"])[-1])
+
+
+def billing_keyboard(language: str) -> InlineKeyboardMarkup:
+    copy = BILLING_COPY.get(language, BILLING_COPY["en"])
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"⏱ {copy[5]}", callback_data="billing:hours")],
+        [InlineKeyboardButton(text=f"💠 {copy[6]}", callback_data="billing:subscription")],
+    ])
+
+
+async def send_plans(message: Message, repository: Repository, user):
+    locale = interface_language(repository, user)
+    copy = BILLING_COPY.get(locale, BILLING_COPY["en"])
+    body = f"💳 <b>{copy[0]}</b>\n\n• {copy[1]}\n• {copy[2]}\n• {copy[3]}\n\n{copy[4]}"
+    if repository.settings.billing_enforcement:
+        status = await asyncio.to_thread(repository.billing_status, str(user.id))
+        body += f"\n\n{copy[11].format(count=status['free_remaining'])}"
+    await message.answer(body, parse_mode="HTML", reply_markup=billing_keyboard(locale))
+
+
+@router.message(Command("plans", "tariffs"))
+async def show_plans_command(message: Message, repository: Repository):
+    if message.chat.type == "private" and message.from_user:
+        await send_plans(message, repository, message.from_user)
+
+
+@router.callback_query(F.data.startswith("billing:"))
+async def handle_billing_menu(query: CallbackQuery, repository: Repository):
+    if not query.message or query.message.chat.type != "private" or query.message.chat.id != query.from_user.id:
+        await query.answer("Open this in a private chat.", show_alert=True)
+        return
+    action = (query.data or "").split(":", 1)[-1]
+    copy = BILLING_COPY.get(interface_language(repository, query.from_user), BILLING_COPY["en"])
+    if action == "plans":
+        await query.answer()
+        await send_plans(query.message, repository, query.from_user)
+    elif action == "hours":
+        try:
+            await asyncio.to_thread(repository.expect_pack_amount, str(query.from_user.id))
+        except ProcessingCancelled:
+            await query.answer("Account is being deleted.", show_alert=True)
+            return
+        await query.answer()
+        await query.message.answer(copy[7])
+    elif action == "subscription":
+        await query.answer()
+        await query.message.answer(copy[10])
+    else:
+        await query.answer("Unknown option.", show_alert=True)
 
 
 async def send_legal_prompt(message: Message, stage: str, domain: str):
@@ -417,6 +470,9 @@ async def enqueue(message: Message, repository: Repository, payload: dict):
             bot_copy(locale, 3)
         )
         return
+    except BillingRequired:
+        await status.edit_text("Бесплатные разборы закончились. Проверьте тарифы через /plans.")
+        return
     except ProcessingCancelled:
         await status.edit_text("Данные аккаунта удаляются. Запись не принята.")
         return
@@ -455,6 +511,18 @@ async def handle_audio(message: Message, repository: Repository):
 
 @router.message(F.text)
 async def handle_youtube_link(message: Message, repository: Repository):
+    if message.chat.type == "private" and message.from_user and (
+        await asyncio.to_thread(repository.awaiting_pack_amount, str(message.from_user.id))
+    ) and not re.search(r"https?://\S+", message.text or ""):
+        copy = BILLING_COPY.get(interface_language(repository, message.from_user), BILLING_COPY["en"])
+        try:
+            minutes = parse_pack_minutes(message.text or "")
+        except ValueError:
+            await message.answer(copy[8])
+            return
+        await asyncio.to_thread(repository.clear_pack_amount_prompt, str(message.from_user.id))
+        await message.answer(copy[9].format(hours=format_hours(minutes), price=pack_price_rub(minutes)))
+        return
     match = re.search(r"https?://\S+", message.text or "")
     try:
         video = youtube_video_id(match.group(0) if match else "")
