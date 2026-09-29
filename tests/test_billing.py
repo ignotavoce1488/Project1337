@@ -111,12 +111,19 @@ def test_unlimited_exemption_is_permanent_and_ignores_all_metered_limits(repo):
 
 
 async def test_bot_tariff_menu_and_fractional_quote(repo):
-    message = SimpleNamespace(answer=AsyncMock(), chat=SimpleNamespace(id=123, type="private"))
+    message = SimpleNamespace(answer=AsyncMock(), answer_photo=AsyncMock(),
+                              chat=SimpleNamespace(id=123, type="private"))
     user = SimpleNamespace(id=123, language_code="ru")
     await send_plans(message, repo, user)
-    assert "250 ₽" in message.answer.await_args.args[0]
-    assert "155 ₽" in message.answer.await_args.args[0]
-    assert message.answer.await_args.kwargs["reply_markup"].inline_keyboard[0][0].callback_data == "billing:hours"
+    photo = message.answer_photo.await_args
+    assert photo.args[0].path.name == "ru.png"
+    assert "250 ₽" in photo.kwargs["caption"]
+    assert "155 ₽" in photo.kwargs["caption"]
+    buttons = photo.kwargs["reply_markup"].inline_keyboard
+    assert [[button.callback_data for button in row] for row in buttons] == [
+        ["billing:subscription", "billing:hours"],
+        ["billing:balance", "billing:pricing"],
+    ]
     query = SimpleNamespace(data="billing:hours", message=message, from_user=user, answer=AsyncMock())
     await handle_billing_menu(query, repo)
     assert repo.awaiting_pack_amount("123")
@@ -129,10 +136,20 @@ async def test_bot_tariff_menu_and_fractional_quote(repo):
 async def test_unlimited_status_and_myid_command(repo):
     repo.grant_unlimited("123")
     user = SimpleNamespace(id=123, language_code="ru")
-    message = SimpleNamespace(answer=AsyncMock(), chat=SimpleNamespace(id=123, type="private"),
+    message = SimpleNamespace(answer=AsyncMock(), answer_photo=AsyncMock(),
+                              chat=SimpleNamespace(id=123, type="private"),
                               from_user=user)
     await send_plans(message, repo, user)
-    assert "Безлимит активен" in message.answer.await_args.args[0]
-    assert message.answer.await_args.kwargs["reply_markup"] is None
+    assert "Безлимит активен" in message.answer_photo.await_args.kwargs["caption"]
+    assert message.answer_photo.await_args.kwargs["reply_markup"] is None
     await show_telegram_id(message)
     assert "123" in message.answer.await_args.args[0]
+
+
+def test_every_interface_language_has_a_rendered_plan_card():
+    from slovech.bot_handlers.handlers import PLAN_BANNER_DIR
+    from slovech.core.languages import LANGUAGES
+
+    assert {path.stem for path in PLAN_BANNER_DIR.glob("*.png")} == set(LANGUAGES)
+    assert all((PLAN_BANNER_DIR / f"{code}.png").stat().st_size < 10 * 1024 * 1024
+               for code in LANGUAGES)

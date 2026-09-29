@@ -29,6 +29,21 @@ from slovech.core.youtube import youtube_video_id
 router = Router()
 
 WELCOME_BANNER = Path(__file__).resolve().parents[2] / "web" / "assets" / "welcome.png"
+PLAN_BANNER_DIR = Path(__file__).resolve().parents[2] / "web" / "assets" / "plans"
+
+PLAN_ACTIONS = {
+    "ru": ("Мой статус", "Цены за часы", "Часы"),
+    "en": ("My usage", "Hourly prices", "Hours"),
+    "es": ("Mi estado", "Precios por hora", "Horas"),
+    "fr": ("Mon solde", "Prix horaires", "Heures"),
+    "de": ("Mein Stand", "Stundenpreise", "Stunden"),
+    "it": ("Il mio saldo", "Prezzi orari", "Ore"),
+    "pt": ("Meu saldo", "Preços por hora", "Horas"),
+    "tr": ("Durumum", "Saat ücretleri", "Saatler"),
+    "ar": ("رصيدي", "أسعار الساعات", "ساعات"),
+    "hi": ("मेरा बैलेंस", "घंटों की कीमत", "घंटे"),
+    "tk": ("Hasabym", "Sagat bahalary", "Sagatlar"),
+}
 
 # title, description, first step, second step, ready hint, consent hint,
 # library button, language button, guide button, guide text
@@ -286,16 +301,20 @@ async def show_welcome_guide(query: CallbackQuery, repository: Repository):
 
 def billing_keyboard(language: str) -> InlineKeyboardMarkup:
     copy = BILLING_COPY.get(language, BILLING_COPY["en"])
+    status_label, price_label, hours_label = PLAN_ACTIONS.get(language, PLAN_ACTIONS["en"])
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"⏱ {copy[5]}", callback_data="billing:hours")],
-        [InlineKeyboardButton(text=f"💠 {copy[6]}", callback_data="billing:subscription")],
+        [InlineKeyboardButton(text=f"💠 {copy[6]}", callback_data="billing:subscription"),
+         InlineKeyboardButton(text=f"⏱ {hours_label}", callback_data="billing:hours")],
+        [InlineKeyboardButton(text=f"📊 {status_label}", callback_data="billing:balance"),
+         InlineKeyboardButton(text=f"❔ {price_label}", callback_data="billing:pricing")],
     ])
 
 
 async def send_plans(message: Message, repository: Repository, user):
     locale = interface_language(repository, user)
     copy = BILLING_COPY.get(locale, BILLING_COPY["en"])
-    body = f"💳 <b>{copy[0]}</b>\n\n• {copy[1]}\n• {copy[2]}\n• {copy[3]}\n\n{copy[4]}"
+    body = (f"💳 <b>{copy[0]}</b>\n\n"
+            f"🎁 {copy[1]}\n💠 {copy[2]}\n⏱ {copy[3]}\n\n<i>{copy[4]}</i>")
     status = await asyncio.to_thread(repository.billing_status, str(user.id))
     if status["unlimited"]:
         body += "\n\n♾ Безлимит активен для этого аккаунта." if locale == "ru" else (
@@ -303,8 +322,11 @@ async def send_plans(message: Message, repository: Repository, user):
         )
     elif repository.settings.billing_enforcement:
         body += f"\n\n{copy[11].format(count=status['free_remaining'])}"
-    await message.answer(body, parse_mode="HTML",
-                         reply_markup=None if status["unlimited"] else billing_keyboard(locale))
+    await message.answer_photo(
+        FSInputFile(PLAN_BANNER_DIR / f"{locale if locale in BILLING_COPY else 'en'}.png"),
+        caption=body, parse_mode="HTML",
+        reply_markup=None if status["unlimited"] else billing_keyboard(locale),
+    )
 
 
 @router.message(Command("myid"))
@@ -340,6 +362,23 @@ async def handle_billing_menu(query: CallbackQuery, repository: Repository):
     elif action == "subscription":
         await query.answer()
         await query.message.answer(copy[10])
+    elif action == "balance":
+        await query.answer()
+        status = await asyncio.to_thread(repository.billing_status, str(query.from_user.id))
+        if status["unlimited"]:
+            body = "♾ Безлимит активен для этого аккаунта." if (
+                interface_language(repository, query.from_user) == "ru"
+            ) else "♾ Unlimited access is active for this account."
+        elif not repository.settings.billing_enforcement:
+            body = copy[4]
+        else:
+            body = (copy[11].format(count=status["free_remaining"])
+                    + f"\n💠 {status['subscription_seconds'] // 60} min"
+                    + f"\n⏱ {status['pack_seconds'] // 60} min")
+        await query.message.answer(body)
+    elif action == "pricing":
+        await query.answer()
+        await query.message.answer(f"{copy[3]}\n1.5 h = 70 ₽")
     else:
         await query.answer("Unknown option.", show_alert=True)
 
