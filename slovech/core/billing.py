@@ -1,17 +1,32 @@
 """Tariff arithmetic. Payment collection is deliberately separate from entitlements."""
 
 import re
+from calendar import monthrange
+from datetime import UTC, datetime
 from decimal import ROUND_CEILING, Decimal, InvalidOperation
 
-FREE_WINDOW_SECONDS = 28 * 24 * 60 * 60
 FREE_JOBS_PER_WINDOW = 2
 SUBSCRIPTION_HOURS = 40
 SUBSCRIPTION_PRICE_RUB = 250
-SUBSCRIPTION_PERIOD_SECONDS = FREE_WINDOW_SECONDS
 MAX_PACK_HOURS = 4
 
 # Marginal price per hour: each additional hour is a little cheaper.
 HOURLY_RATES_RUB = (50, 40, 35, 30)
+
+
+def calendar_month_start(timestamp: float) -> float:
+    """UTC start of the calendar month containing a timestamp."""
+    date = datetime.fromtimestamp(timestamp, UTC)
+    return date.replace(day=1, hour=0, minute=0, second=0, microsecond=0).timestamp()
+
+
+def calendar_month_later(timestamp: float) -> float:
+    """Same UTC time next month, clamping dates missing in the next month."""
+    date = datetime.fromtimestamp(timestamp, UTC)
+    year = date.year + (date.month == 12)
+    month = 1 if date.month == 12 else date.month + 1
+    day = min(date.day, monthrange(year, month)[1])
+    return date.replace(year=year, month=month, day=day).timestamp()
 
 
 def parse_pack_minutes(text: str) -> int:

@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -9,7 +10,13 @@ from slovech.bot_handlers.handlers import (
     send_plans,
     show_telegram_id,
 )
-from slovech.core.billing import format_hours, pack_price_rub, parse_pack_minutes
+from slovech.core.billing import (
+    calendar_month_later,
+    calendar_month_start,
+    format_hours,
+    pack_price_rub,
+    parse_pack_minutes,
+)
 from slovech.core.billing_copy import BILLING_COPY
 from slovech.core.privacy import erase_user_rows
 from slovech.core.storage import BillingRequired
@@ -33,6 +40,31 @@ def test_copy_covers_every_supported_language():
 
     assert BILLING_COPY.keys() == LANGUAGES.keys()
     assert all(len(copy) == 12 for copy in BILLING_COPY.values())
+
+
+def test_calendar_month_boundaries():
+    january_31 = datetime(2026, 1, 31, 12, tzinfo=UTC).timestamp()
+    february_28 = datetime(2026, 2, 28, 12, tzinfo=UTC).timestamp()
+    assert calendar_month_later(january_31) == february_28
+    assert calendar_month_start(february_28) == datetime(
+        2026, 2, 1, tzinfo=UTC
+    ).timestamp()
+    leap_january_31 = datetime(2028, 1, 31, 12, tzinfo=UTC).timestamp()
+    assert calendar_month_later(leap_january_31) == datetime(
+        2028, 2, 29, 12, tzinfo=UTC
+    ).timestamp()
+
+
+def test_free_allowance_resets_at_calendar_month_start(repo):
+    january_31 = datetime(2026, 1, 31, 12, tzinfo=UTC).timestamp()
+    february_1 = datetime(2026, 2, 1, 0, tzinfo=UTC).timestamp()
+    with repo.connection() as db:
+        db.execute(
+            "INSERT INTO billing_usage(job_id,user_id,kind,state,created) "
+            "VALUES(?,?,?,?,?)", ("previous-month", "123", "free", "used", january_31)
+        )
+    assert repo.billing_status("123", now=january_31)["free_remaining"] == 1
+    assert repo.billing_status("123", now=february_1)["free_remaining"] == 2
 
 
 def test_free_allowance_reserves_atomically_and_failed_job_is_released(repo):
@@ -77,11 +109,12 @@ def test_paid_grant_duration_reservation_and_refund(repo):
 
 
 def test_subscription_expires_and_erasure_removes_billing_rows(repo):
-    import time
-
-    assert repo.grant_paid_time("123", "verified-subscription", "subscription", 40 * 3600)
-    assert repo.billing_status("123")["subscription_seconds"] == 40 * 3600
-    assert repo.billing_status("123", now=time.time() + 29 * 86400)["subscription_seconds"] == 0
+    january_31 = datetime(2026, 1, 31, 12, tzinfo=UTC).timestamp()
+    february_28 = datetime(2026, 2, 28, 12, tzinfo=UTC).timestamp()
+    assert repo.grant_paid_time("123", "verified-subscription", "subscription",
+                                40 * 3600, now=january_31)
+    assert repo.billing_status("123", now=february_28 - 1)["subscription_seconds"] == 40 * 3600
+    assert repo.billing_status("123", now=february_28)["subscription_seconds"] == 0
     repo.expect_pack_amount("123")
     assert repo.awaiting_pack_amount("123")
     with repo.connection() as db:

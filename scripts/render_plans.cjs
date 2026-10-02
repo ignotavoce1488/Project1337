@@ -1,89 +1,175 @@
-/* Render localized Telegram plan images. Run: node scripts/render_plans.cjs */
+/* Render the approved pricing layout in every bot interface language. */
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('@playwright/test');
 
 const root = path.resolve(__dirname, '..');
 const assets = path.join(root, 'web', 'assets');
-const template = fs.readFileSync(path.join(assets, 'plans-template.svg'), 'utf8');
-const welcome = fs.readFileSync(path.join(assets, 'welcome.svg'), 'utf8');
-const brand = welcome.match(/href="(data:image\/png;base64,[^"]+)"/)[1];
+const template = path.join(assets, 'plans-template.html');
+const output = path.join(assets, 'plans');
 
-const fields = [
-  'HEADING', 'INTRO', 'FREE', 'SUBSCRIPTION', 'HOURS',
-  'FREE_PRICE', 'SUB_PRICE', 'HOUR_PRICE',
-  'FREE_LINE1', 'FREE_LINE2', 'SUB_LINE1', 'SUB_LINE2', 'HOUR_LINE1', 'HOUR_LINE2',
-  'BADGE', 'FREE_UNIT', 'SUB_UNIT', 'HOUR_UNIT',
+const source = [
+  'Тарифы', 'Назад', 'Простые и понятные тарифы', 'Подписка', '1 месяц',
+  'или часы без подписки', 'Бесплатно', 'каждый месяц', '2 разбора',
+  'Что входит', 'Количество', 'Период', 'Оплата', 'не нужна',
+  'Чтобы попробовать сервис', 'Для частых записей', 'за месяц',
+  '40 часов записей', 'Объём', '40 часов', 'Для кого', 'частые записи',
+  'Большой объём по одной цене', 'По часам', 'от', 'за первый час',
+  '1–4 часа на выбор', '1 час', '2 часа', '3 часа', '4 часа',
+  'Купленные часы не сгорают',
 ];
-const translations = {
-  ru: ['Простые и понятные тарифы', 'Начните бесплатно. Больше часов — когда понадобятся.', 'Бесплатно', 'Подписка', 'По часам',
-    '0 ₽', '250 ₽', '50 ₽', '2 разбора', 'каждые 4 недели', '40 часов записей', 'на 4 недели', 'От 1 до 4 часов', 'Часы не сгорают'],
-  en: ['Simple, clear pricing', 'Start free. Add more hours when you need them.', 'Free', 'Subscription', 'By the hour',
-    '₽0', '₽250', '₽50', '2 recordings', 'every 4 weeks', '40 hours of audio', 'for 4 weeks', 'Choose 1 to 4 hours', 'No expiry'],
-  es: ['Precios claros y sencillos', 'Empieza gratis. Añade horas cuando las necesites.', 'Gratis', 'Suscripción', 'Por horas',
-    '0 ₽', '250 ₽', '50 ₽', '2 grabaciones', 'cada 4 semanas', '40 horas de audio', 'por 4 semanas', 'De 1 a 4 horas', 'Sin vencimiento'],
-  fr: ['Des tarifs simples et clairs', 'Commence gratuitement. Ajoute des heures si besoin.', 'Gratuit', 'Abonnement', 'À la carte',
-    '0 ₽', '250 ₽', '50 ₽', '2 enregistrements', 'sur 4 semaines', '40 heures d’audio', 'pour 4 semaines', 'De 1 à 4 heures', 'Sans expiration'],
-  de: ['Einfach. Klar. Fair.', 'Starte kostenlos. Buche bei Bedarf weitere Stunden.', 'Kostenlos', 'Abo', 'Einzelstunden',
-    '0 ₽', '250 ₽', '50 ₽', '2 Aufnahmen', 'alle 4 Wochen', '40 Stunden Audio', 'für 4 Wochen', '1–4 Stunden', 'Ohne Ablaufdatum'],
-  it: ['Prezzi semplici e chiari', 'Inizia gratis. Aggiungi ore quando ti servono.', 'Gratis', 'Abbonamento', 'A ore',
-    '0 ₽', '250 ₽', '50 ₽', '2 registrazioni', 'ogni 4 settimane', '40 ore di audio', 'per 4 settimane', 'Da 1 a 4 ore', 'Senza scadenza'],
-  pt: ['Preços simples e claros', 'Comece grátis. Compre mais horas quando precisar.', 'Grátis', 'Assinatura', 'Por horas',
-    '0 ₽', '250 ₽', '50 ₽', '2 gravações', 'a cada 4 semanas', '40 horas de áudio', 'por 4 semanas', 'De 1 a 4 horas', 'Sem vencimento'],
-  tr: ['Basit ve açık fiyatlar', 'Ücretsiz başla. Gerektiğinde saat ekle.', 'Ücretsiz', 'Abonelik', 'Saatlik',
-    '0 ₽', '250 ₽', '50 ₽', '2 kayıt', 'her 4 haftada', '40 saat ses kaydı', '4 hafta boyunca', '1–4 saat seç', 'Süresi dolmaz'],
-  ar: ['أسعار بسيطة وواضحة', 'ابدأ مجاناً، وأضف ساعات عند الحاجة.', 'مجاناً', 'اشتراك', 'بالساعة',
-    '0 ₽', '250 ₽', '50 ₽', 'تسجيلان', 'كل 4 أسابيع', '40 ساعة صوتية', 'لمدة 4 أسابيع', 'اختر من 1 إلى 4 ساعات', 'الساعات لا تنتهي'],
-  hi: ['सरल और स्पष्ट कीमतें', 'मुफ़्त शुरू करें। ज़रूरत पड़ने पर घंटे जोड़ें।', 'मुफ़्त', 'सदस्यता', 'घंटे खरीदें',
-    '0 ₽', '250 ₽', '50 ₽', '2 रिकॉर्डिंग', 'हर 4 हफ़्ते में', '40 घंटे की ऑडियो', '4 हफ़्तों के लिए', '1 से 4 घंटे चुनें', 'कोई समाप्ति नहीं'],
-  tk: ['Ýönekeý we düşnükli nyrhlar', 'Mugt başla. Gerek bolanda goşmaça sagat al.', 'Mugt', 'Abuna', 'Sagat boýunça',
-    '0 ₽', '250 ₽', '50 ₽', '2 ýazgy', 'her 4 hepdede', '40 sagat audio', '4 hepde üçin', '1–4 sagat saýla', 'Möhleti ýok'],
-};
-const units = {
-  ru: ['ЧАСТЫЕ ЗАПИСИ', 'за 4 недели', 'за 4 недели', 'за первый час'],
-  en: ['REGULAR USE', 'per 4 weeks', 'per 4 weeks', 'for the first hour'],
-  es: ['USO FRECUENTE', 'por 4 semanas', 'por 4 semanas', 'por la primera hora'],
-  fr: ['USAGE RÉGULIER', 'pour 4 semaines', 'pour 4 semaines', 'pour la première heure'],
-  de: ['REGELMÄSSIG', 'für 4 Wochen', 'für 4 Wochen', 'für die erste Stunde'],
-  it: ['USO FREQUENTE', 'per 4 settimane', 'per 4 settimane', 'per la prima ora'],
-  pt: ['USO FREQUENTE', 'por 4 semanas', 'por 4 semanas', 'pela primeira hora'],
-  tr: ['DÜZENLİ KULLANIM', '4 hafta için', '4 hafta için', 'ilk saat için'],
-  ar: ['للاستخدام المنتظم', 'كل 4 أسابيع', 'لمدة 4 أسابيع', 'للساعة الأولى'],
-  hi: ['नियमित उपयोग', 'हर 4 हफ़्ते', '4 हफ़्तों के लिए', 'पहले घंटे के लिए'],
-  tk: ['YZYGLY ULANIŞ', 'her 4 hepde', '4 hepde üçin', 'ilkinji sagat üçin'],
-};
 
-function escapeXml(value) {
-  return value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[char]);
-}
+const translations = {
+  ru: source,
+  en: [
+    'Plans', 'Back', 'Simple and transparent pricing', 'Subscription', '1 month',
+    'or hours without a subscription', 'Free', 'every month', '2 summaries',
+    'Included', 'Quantity', 'Period', 'Payment', 'not needed',
+    'Try the service', 'For frequent recordings', 'per month',
+    '40 hours of recordings', 'Volume', '40 hours', 'Best for', 'frequent recordings',
+    'More hours at one price', 'By the hour', 'from', 'for the first hour',
+    'Choose 1–4 hours', '1 hour', '2 hours', '3 hours', '4 hours',
+    'Purchased hours never expire',
+  ],
+  es: [
+    'Planes', 'Volver', 'Precios simples y transparentes', 'Suscripción', '1 mes',
+    'u horas sin suscripción', 'Gratis', 'cada mes', '2 resúmenes',
+    'Incluye', 'Cantidad', 'Período', 'Pago', 'no hace falta',
+    'Para probar el servicio', 'Para grabaciones frecuentes', 'al mes',
+    '40 horas de grabaciones', 'Volumen', '40 horas', 'Ideal para', 'uso frecuente',
+    'Más horas por un precio fijo', 'Por horas', 'desde', 'por la primera hora',
+    'Elige de 1 a 4 horas', '1 hora', '2 horas', '3 horas', '4 horas',
+    'Las horas compradas no caducan',
+  ],
+  fr: [
+    'Tarifs', 'Retour', 'Des prix simples et transparents', 'Abonnement', '1 mois',
+    'ou des heures sans abonnement', 'Gratuit', 'chaque mois', '2 résumés',
+    'Inclus', 'Quantité', 'Durée', 'Paiement', 'inutile',
+    'Pour essayer le service', 'Pour les usages fréquents', 'par mois',
+    '40 heures d’enregistrements', 'Volume', '40 heures', 'Idéal pour', 'usage fréquent',
+    'Plus d’heures à prix fixe', 'À l’heure', 'dès', 'pour la première heure',
+    'Choisis de 1 à 4 heures', '1 heure', '2 heures', '3 heures', '4 heures',
+    'Les heures achetées n’expirent pas',
+  ],
+  de: [
+    'Tarife', 'Zurück', 'Einfache und transparente Preise', 'Abo', '1 Monat',
+    'oder Stunden ohne Abo', 'Kostenlos', 'jeden Monat', '2 Analysen',
+    'Enthalten', 'Anzahl', 'Zeitraum', 'Zahlung', 'nicht nötig',
+    'Zum Ausprobieren', 'Für häufige Aufnahmen', 'pro Monat',
+    '40 Stunden Aufnahmen', 'Umfang', '40 Stunden', 'Für wen', 'häufige Aufnahmen',
+    'Viele Stunden zum Festpreis', 'Stundenweise', 'ab', 'für die erste Stunde',
+    'Wähle 1–4 Stunden', '1 Stunde', '2 Stunden', '3 Stunden', '4 Stunden',
+    'Gekaufte Stunden verfallen nicht',
+  ],
+  it: [
+    'Tariffe', 'Indietro', 'Prezzi semplici e trasparenti', 'Abbonamento', '1 mese',
+    'oppure ore senza abbonamento', 'Gratis', 'ogni mese', '2 riassunti',
+    'Include', 'Quantità', 'Periodo', 'Pagamento', 'non serve',
+    'Per provare il servizio', 'Per registrazioni frequenti', 'al mese',
+    '40 ore di registrazioni', 'Volume', '40 ore', 'Ideale per', 'uso frequente',
+    'Più ore a prezzo fisso', 'A ore', 'da', 'per la prima ora',
+    'Scegli da 1 a 4 ore', '1 ora', '2 ore', '3 ore', '4 ore',
+    'Le ore acquistate non scadono',
+  ],
+  pt: [
+    'Planos', 'Voltar', 'Preços simples e transparentes', 'Assinatura', '1 mês',
+    'ou horas sem assinatura', 'Grátis', 'todo mês', '2 resumos',
+    'Inclui', 'Quantidade', 'Período', 'Pagamento', 'não precisa',
+    'Para testar o serviço', 'Para gravações frequentes', 'por mês',
+    '40 horas de gravações', 'Volume', '40 horas', 'Ideal para', 'uso frequente',
+    'Mais horas por preço fixo', 'Por hora', 'a partir de', 'pela primeira hora',
+    'Escolha de 1 a 4 horas', '1 hora', '2 horas', '3 horas', '4 horas',
+    'As horas compradas não expiram',
+  ],
+  tr: [
+    'Paketler', 'Geri', 'Basit ve şeffaf fiyatlar', 'Abonelik', '1 ay',
+    'veya aboneliksiz saatler', 'Ücretsiz', 'her ay', '2 özet',
+    'Dahil olanlar', 'Adet', 'Süre', 'Ödeme', 'gerekmez',
+    'Hizmeti denemek için', 'Sık kayıt yapanlar için', 'aylık',
+    '40 saat kayıt', 'Miktar', '40 saat', 'Kime uygun', 'sık kayıt',
+    'Tek fiyata daha çok saat', 'Saatlik', 'başlangıç', 'ilk saat için',
+    '1–4 saat seç', '1 saat', '2 saat', '3 saat', '4 saat',
+    'Alınan saatlerin süresi dolmaz',
+  ],
+  ar: [
+    'الباقات', 'رجوع', 'أسعار بسيطة وواضحة', 'اشتراك', 'شهر واحد',
+    'أو ساعات بلا اشتراك', 'مجاني', 'كل شهر', 'ملخصان',
+    'يشمل', 'العدد', 'المدة', 'الدفع', 'غير مطلوب',
+    'لتجربة الخدمة', 'للتسجيلات المتكررة', 'شهرياً',
+    '40 ساعة تسجيل', 'الحجم', '40 ساعة', 'مناسب لـ', 'تسجيلات متكررة',
+    'ساعات أكثر بسعر واحد', 'بالساعة', 'من', 'للساعة الأولى',
+    'اختر من ساعة إلى 4', 'ساعة', 'ساعتان', '3 ساعات', '4 ساعات',
+    'الساعات المشتراة لا تنتهي',
+  ],
+  hi: [
+    'प्लान', 'वापस', 'सरल और स्पष्ट कीमतें', 'सदस्यता', '1 महीना',
+    'या बिना सदस्यता घंटे', 'मुफ़्त', 'हर महीने', '2 सारांश',
+    'क्या शामिल है', 'संख्या', 'अवधि', 'भुगतान', 'ज़रूरी नहीं',
+    'सेवा आज़माने के लिए', 'नियमित रिकॉर्डिंग के लिए', 'प्रति माह',
+    '40 घंटे की रिकॉर्डिंग', 'मात्रा', '40 घंटे', 'किसके लिए', 'नियमित रिकॉर्डिंग',
+    'एक कीमत में अधिक घंटे', 'घंटे के हिसाब से', 'से', 'पहले घंटे के लिए',
+    '1–4 घंटे चुनें', '1 घंटा', '2 घंटे', '3 घंटे', '4 घंटे',
+    'खरीदे गए घंटे खत्म नहीं होते',
+  ],
+  tk: [
+    'Nyrhnamalar', 'Yza', 'Ýönekeý we düşnükli nyrhlar', 'Abuna', '1 aý',
+    'ýa-da abunasyz sagatlar', 'Mugt', 'her aý', '2 gysgaça mazmun',
+    'Içine girýär', 'Sany', 'Döwri', 'Töleg', 'gerek däl',
+    'Hyzmaty synap görmek üçin', 'Ýygy ýazgylar üçin', 'aýda',
+    '40 sagat ýazgy', 'Möçberi', '40 sagat', 'Kim üçin', 'ýygy ýazgylar',
+    'Bir bahadan köp sagat', 'Sagat boýunça', 'başlap', 'ilkinji sagat üçin',
+    '1–4 sagat saýla', '1 sagat', '2 sagat', '3 sagat', '4 sagat',
+    'Satyn alnan sagatlar möhletsiz',
+  ],
+};
 
 (async () => {
   const browser = await chromium.launch();
+  fs.mkdirSync(output, { recursive: true });
   try {
-    const page = await browser.newPage({ viewport: { width: 1200, height: 850 }, deviceScaleFactor: 1 });
-    const directory = path.join(assets, 'plans');
-    fs.mkdirSync(directory, { recursive: true });
+    const page = await browser.newPage({ viewport: { width: 978, height: 840 }, deviceScaleFactor: 2 });
     for (const [language, copy] of Object.entries(translations)) {
-      let svg = template.replace('__BRAND_IMAGE__', brand);
-      const localized = copy.concat(units[language]);
-      fields.forEach((field, index) => { svg = svg.replace(`__${field}__`, escapeXml(localized[index])); });
-      await page.goto(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`);
-      await page.waitForTimeout(100);
-      const overflows = await page.evaluate(() => {
-        const columns = { 224: [55, 393], 128: [55, 393], 600: [431, 769],
-          504: [431, 769], 976: [807, 1145], 880: [807, 1145] };
-        return [...document.querySelectorAll('text')].flatMap(element => {
-          const x = Number(element.getAttribute('x'));
-          const y = Number(element.getAttribute('y'));
-          if (!columns[x] || y < 300) return [];
-          const bounds = element.getBBox();
-          const [left, right] = columns[x];
-          return bounds.x < left + 16 || bounds.x + bounds.width > right - 16
-            ? [element.textContent] : [];
+      if (copy.length !== source.length) throw new Error(`Incomplete ${language} translation`);
+      await page.goto(`file://${template}`);
+      const missing = await page.evaluate(({ source, copy, language }) => {
+        document.documentElement.lang = language;
+        document.body.classList.add(`lang-${language}`);
+        const translated = new Set();
+        const map = new Map(source.map((key, index) => [key, copy[index]]));
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        let node;
+        while ((node = walker.nextNode())) {
+          const key = node.textContent.trim();
+          if (map.has(key)) {
+            node.textContent = map.get(key);
+            node.parentElement.dir = 'auto';
+            translated.add(key);
+          }
+        }
+        return source.filter(key => !translated.has(key));
+      }, { source, copy, language });
+      if (missing.length) throw new Error(`Missing ${language} source text: ${missing.join(', ')}`);
+      const overflow = await page.evaluate(() => {
+        return [...document.querySelectorAll('.card')].flatMap(card => {
+          const bounds = card.getBoundingClientRect();
+          const walker = document.createTreeWalker(card, NodeFilter.SHOW_TEXT);
+          const problems = [];
+          let node;
+          while ((node = walker.nextNode())) {
+            if (!node.textContent.trim()) continue;
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            const textBounds = range.getBoundingClientRect();
+            if (textBounds.left < bounds.left + 7 || textBounds.right > bounds.right - 7 ||
+                textBounds.bottom > bounds.bottom - 7) {
+              problems.push(node.textContent.trim());
+            }
+          }
+          return problems;
         });
       });
-      if (overflows.length) throw new Error(`Text outside ${language} cards: ${overflows.join(', ')}`);
-      await page.screenshot({ path: path.join(directory, `${language}.png`) });
+      if (overflow.length) throw new Error(`Text outside ${language} cards: ${overflow.join(', ')}`);
+      await page.screenshot({ path: path.join(output, `${language}.png`) });
     }
     console.log(`Rendered ${Object.keys(translations).length} plan images`);
   } finally {

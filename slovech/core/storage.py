@@ -12,8 +12,8 @@ from contextlib import contextmanager
 
 from slovech.core.billing import (
     FREE_JOBS_PER_WINDOW,
-    FREE_WINDOW_SECONDS,
-    SUBSCRIPTION_PERIOD_SECONDS,
+    calendar_month_later,
+    calendar_month_start,
 )
 from slovech.core.config import Settings
 from slovech.core.legal import archived_snapshots, document_snapshot, document_version
@@ -235,7 +235,7 @@ class Repository:
             free_used = db.execute(
                 "SELECT COUNT(*) FROM billing_usage WHERE user_id=? AND kind='free' "
                 "AND state IN ('reserved','used') AND created>=?",
-                (user_id, now - FREE_WINDOW_SECONDS),
+                (user_id, calendar_month_start(now)),
             ).fetchone()[0]
             grants = db.execute(
                 "SELECT kind,COALESCE(SUM(seconds_remaining),0) FROM billing_grants "
@@ -281,7 +281,7 @@ class Repository:
         if kind == "pack" and not 3600 <= seconds <= 4 * 3600:
             raise ValueError("Hour pack must grant 1–4 hours")
         now = time.time() if now is None else now
-        expires = now + SUBSCRIPTION_PERIOD_SECONDS if kind == "subscription" else None
+        expires = calendar_month_later(now) if kind == "subscription" else None
         with self.connection() as db:
             db.execute("BEGIN IMMEDIATE")
             self._require_not_deleting(db, user_id)
@@ -324,7 +324,7 @@ class Repository:
         used = db.execute(
             "SELECT COUNT(*) FROM billing_usage WHERE user_id=? AND kind='free' "
             "AND state IN ('reserved','used') AND created>=?",
-            (user_id, now - FREE_WINDOW_SECONDS),
+            (user_id, calendar_month_start(now)),
         ).fetchone()[0]
         kind = "free"
         if used >= FREE_JOBS_PER_WINDOW:
