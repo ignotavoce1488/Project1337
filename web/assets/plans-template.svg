@@ -1,43 +1,50 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
-  <rect width="1200" height="800" fill="#f7f5f1"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="850" viewBox="0 0 1200 850">
+  <rect width="1200" height="850" fill="#faf9f7"/>
 
-  <!-- Crop the exact Mini App mark; its light wordmark is redrawn for this light theme. -->
-  <svg x="62" y="44" width="61" height="61" viewBox="0 0 79 79">
+  <!-- Reuse the exact Mini App mark and set its wordmark in dark ink. -->
+  <svg x="55" y="34" width="50" height="50" viewBox="0 0 79 79">
     <image width="262.6" height="79" href="__BRAND_IMAGE__"/>
   </svg>
-  <text x="143" y="88" fill="#2d211e" font-family="Georgia,serif" font-size="32" font-weight="700">Конспектъ</text>
-  <path d="M62 128H1138" stroke="#d8d0c9" stroke-width="2"/>
+  <text x="121" y="69" fill="#29201e" font-family="Georgia,serif" font-size="27" font-weight="700">Конспектъ</text>
+  <path d="M55 106H1145" stroke="#e2dcd7" stroke-width="2"/>
 
-  <text x="62" y="205" fill="#241b18" font-family="Arial,sans-serif" font-size="62" font-weight="700" direction="auto">__HEADING__</text>
-  <text x="62" y="252" fill="#665953" font-family="Arial,sans-serif" font-size="28" direction="auto">__INTRO__</text>
+  <text x="600" y="175" fill="#29201e" font-family="Arial,sans-serif" font-size="56" font-weight="700" text-anchor="middle" direction="auto">__HEADING__</text>
+  <text x="600" y="218" fill="#665d58" font-family="Arial,sans-serif" font-size="28" text-anchor="middle" direction="auto">__INTRO__</text>
 
-  <text x="76" y="332" fill="#2d211e" font-family="Arial,sans-serif" font-size="35" font-weight="700" direction="auto">__FREE__</text>
-  <text x="445" y="332" fill="#2d211e" font-family="Arial,sans-serif" font-size="35" font-weight="700" direction="auto">__SUBSCRIPTION__</text>
-  <text x="814" y="332" fill="#2d211e" font-family="Arial,sans-serif" font-size="35" font-weight="700" direction="auto">__HOURS__</text>
+  <rect x="55" y="338" width="338" height="453" rx="23" fill="#f0efed"/>
+  <rect x="431" y="278" width="338" height="513" rx="23" fill="#f1c7b4"/>
+  <rect x="807" y="338" width="338" height="453" rx="23" fill="#302927"/>
 
-  <rect x="62" y="354" width="338" height="373" fill="#fffefd" stroke="#d9d0c9" stroke-width="2"/>
-  <rect x="431" y="354" width="338" height="373" fill="#a84231"/>
-  <rect x="800" y="354" width="338" height="373" fill="#fffefd" stroke="#d9d0c9" stroke-width="2"/>
+  <rect x="493" y="262" width="214" height="36" rx="18" fill="#8d2b1d"/>
+  <text x="600" y="287" fill="#fff9f5" font-family="Arial,sans-serif" font-size="19" font-weight="700" text-anchor="middle" direction="auto">__BADGE__</text>
 
-  <text x="88" y="451" fill="#241b18" font-family="Arial,sans-serif" font-size="63" font-weight="700" direction="auto">__FREE_PRICE__</text>
-  <text x="457" y="451" fill="#fff9f5" font-family="Arial,sans-serif" font-size="63" font-weight="700" direction="auto">__SUB_PRICE__</text>
-  <text x="826" y="451" fill="#241b18" font-family="Arial,sans-serif" font-size="59" font-weight="700" direction="auto">__HOUR_PRICE__</text>
+  <text x="224" y="404" fill="#29201e" font-family="Arial,sans-serif" font-size="39" font-weight="700" text-anchor="middle" direction="auto">__FREE__</text>
+  <text x="600" y="354" fill="#29201e" font-family="Arial,sans-serif" font-size="39" font-weight="700" text-anchor="middle" direction="auto">__SUBSCRIPTION__</text>
+  <text x="976" y="404" fill="#fffaf7" font-family="Arial,sans-serif" font-size="39" font-weight="700" text-anchor="middle" direction="auto">__HOURS__</text>
 
-  <path d="M88 492H374M457 492H743M826 492H1112" stroke="#d9d0c9" stroke-width="2"/>
-  <path d="M457 492H743" stroke="#d78e7f" stroke-width="2"/>
+  <text x="224" y="505" fill="#29201e" font-family="Arial,sans-serif" font-size="72" font-weight="700" text-anchor="middle" direction="auto">__FREE_PRICE__</text>
+  <text x="600" y="465" fill="#29201e" font-family="Arial,sans-serif" font-size="72" font-weight="700" text-anchor="middle" direction="auto">__SUB_PRICE__</text>
+  <text x="976" y="505" fill="#fffaf7" font-family="Arial,sans-serif" font-size="65" font-weight="700" text-anchor="middle" direction="auto">__HOUR_PRICE__</text>
+  <text x="224" y="539" fill="#756b65" font-family="Arial,sans-serif" font-size="23" text-anchor="middle" direction="auto">__FREE_UNIT__</text>
+  <text x="600" y="501" fill="#59453b" font-family="Arial,sans-serif" font-size="23" text-anchor="middle" direction="auto">__SUB_UNIT__</text>
+  <text x="976" y="539" fill="#cbbdb6" font-family="Arial,sans-serif" font-size="23" text-anchor="middle" direction="auto">__HOUR_UNIT__</text>
 
-  <circle cx="102" cy="548" r="5" fill="#a84231"/>
-  <circle cx="102" cy="628" r="5" fill="#a84231"/>
-  <circle cx="471" cy="548" r="5" fill="#fff9f5"/>
-  <circle cx="471" cy="628" r="5" fill="#fff9f5"/>
-  <circle cx="840" cy="548" r="5" fill="#a84231"/>
-  <circle cx="840" cy="628" r="5" fill="#a84231"/>
+  <path d="M88 575H360M464 549H736M840 575H1112" stroke="#d7cfca" stroke-width="2"/>
+  <path d="M464 549H736" stroke="#bb8f7e" stroke-width="2"/>
+  <path d="M840 575H1112" stroke="#675b57" stroke-width="2"/>
 
-  <text x="122" y="559" fill="#382b27" font-family="Arial,sans-serif" font-size="28" direction="auto">__FREE_LINE1__</text>
-  <text x="122" y="639" fill="#382b27" font-family="Arial,sans-serif" font-size="28" direction="auto">__FREE_LINE2__</text>
-  <text x="491" y="559" fill="#fff9f5" font-family="Arial,sans-serif" font-size="28" direction="auto">__SUB_LINE1__</text>
-  <text x="491" y="639" fill="#fff9f5" font-family="Arial,sans-serif" font-size="28" direction="auto">__SUB_LINE2__</text>
-  <text x="860" y="559" fill="#382b27" font-family="Arial,sans-serif" font-size="28" direction="auto">__HOUR_LINE1__</text>
-  <text x="860" y="639" fill="#382b27" font-family="Arial,sans-serif" font-size="28" direction="auto">__HOUR_LINE2__</text>
+  <circle cx="105" cy="630" r="12" fill="#a64735"/>
+  <circle cx="105" cy="707" r="12" fill="#a64735"/>
+  <circle cx="481" cy="613" r="12" fill="#8d2b1d"/>
+  <circle cx="481" cy="693" r="12" fill="#8d2b1d"/>
+  <circle cx="857" cy="630" r="12" fill="#dc9f87"/>
+  <circle cx="857" cy="707" r="12" fill="#dc9f87"/>
+  <path d="m99 630 4 4 8-9m-12 82 4 4 8-9m364-89 4 4 8-9m-12 89 4 4 8-9m364-58 4 4 8-9m-12 82 4 4 8-9" fill="none" stroke="#fffaf7" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
 
+  <text x="128" y="639" fill="#352b27" font-family="Arial,sans-serif" font-size="27" direction="auto">__FREE_LINE1__</text>
+  <text x="128" y="716" fill="#352b27" font-family="Arial,sans-serif" font-size="27" direction="auto">__FREE_LINE2__</text>
+  <text x="504" y="622" fill="#352b27" font-family="Arial,sans-serif" font-size="27" direction="auto">__SUB_LINE1__</text>
+  <text x="504" y="702" fill="#352b27" font-family="Arial,sans-serif" font-size="27" direction="auto">__SUB_LINE2__</text>
+  <text x="880" y="639" fill="#fffaf7" font-family="Arial,sans-serif" font-size="27" direction="auto">__HOUR_LINE1__</text>
+  <text x="880" y="716" fill="#fffaf7" font-family="Arial,sans-serif" font-size="27" direction="auto">__HOUR_LINE2__</text>
 </svg>
